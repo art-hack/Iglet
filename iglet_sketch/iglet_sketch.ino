@@ -650,14 +650,18 @@ void handleRoot() {
             "<label>Wi-Fi Password</label>"
             "<input type='password' name='pass' placeholder='Leave blank if unchanged'>"
             "<h2>🤖 Telegram Remote Bot</h2>"
-            "<label>Bot Token (from @BotFather)</label>"
-            "<input type='text' name='tgtoken' value='");
-  html += String(cfgTelegramToken);
-  html += F("' placeholder='e.g. 123456:ABC-DEF1234ghIkl-zyx57W2v1u'>"
-            "<label>Your Chat ID (auto-detected on 1st message or @userinfobot)</label>"
-            "<input type='text' name='tgchat' value='");
-  html += String(cfgTelegramChatId);
-  html += F("' placeholder='e.g. 987654321'>"
+            "<label>Bot Token ");
+  if (strlen(cfgTelegramToken) > 0) {
+    html += F("<span class='badge' style='background:#d4edda;color:#155724;font-size:11px;padding:2px 8px;border-radius:8px;float:right;'>Saved</span>");
+  }
+  html += F("</label>"
+            "<input type='password' name='tgtoken' placeholder='Leave blank if unchanged'>"
+            "<label>Your Chat ID ");
+  if (strlen(cfgTelegramChatId) > 0) {
+    html += F("<span class='badge' style='background:#d4edda;color:#155724;font-size:11px;padding:2px 8px;border-radius:8px;float:right;'>Linked</span>");
+  }
+  html += F("</label>"
+            "<input type='password' name='tgchat' placeholder='Leave blank if unchanged'>"
             "<p style='font-size:12px;color:#666;margin:4px 0 10px;'>💡 Message your bot to pop up notes on her desk! When she logs her mood, you receive a Telegram ping back.</p>"
             "<button type='submit'>Save & Connect ✨</button></form></div></body></html>");
 
@@ -686,13 +690,21 @@ void handleSave() {
     strncpy(cfgWifiPass, server.arg("pass").c_str(), sizeof(cfgWifiPass) - 1);
   }
 
-  if (server.hasArg("tgtoken")) {
-    strncpy(cfgTelegramToken, server.arg("tgtoken").c_str(), sizeof(cfgTelegramToken) - 1);
-    cfgTelegramToken[sizeof(cfgTelegramToken) - 1] = '\0';
+  if (server.hasArg("tgtoken") && server.arg("tgtoken").length() > 0) {
+    if (server.arg("tgtoken") == "none" || server.arg("tgtoken") == "clear") {
+      cfgTelegramToken[0] = '\0';
+    } else {
+      strncpy(cfgTelegramToken, server.arg("tgtoken").c_str(), sizeof(cfgTelegramToken) - 1);
+      cfgTelegramToken[sizeof(cfgTelegramToken) - 1] = '\0';
+    }
   }
-  if (server.hasArg("tgchat")) {
-    strncpy(cfgTelegramChatId, server.arg("tgchat").c_str(), sizeof(cfgTelegramChatId) - 1);
-    cfgTelegramChatId[sizeof(cfgTelegramChatId) - 1] = '\0';
+  if (server.hasArg("tgchat") && server.arg("tgchat").length() > 0) {
+    if (server.arg("tgchat") == "none" || server.arg("tgchat") == "clear") {
+      cfgTelegramChatId[0] = '\0';
+    } else {
+      strncpy(cfgTelegramChatId, server.arg("tgchat").c_str(), sizeof(cfgTelegramChatId) - 1);
+      cfgTelegramChatId[sizeof(cfgTelegramChatId) - 1] = '\0';
+    }
   }
 
   saveSettings();
