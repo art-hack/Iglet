@@ -215,6 +215,7 @@ unsigned long previousMillis = 0;
 unsigned long lastActivityTime = 0;
 unsigned long buttonDebounceTime = 0;
 const unsigned long buttonDebounceDelay = 400;
+unsigned long buttonIgnoreUntil = 0;
 unsigned long lastRotaryTime = 0;
 const unsigned long rotaryDebounceDelay = 120;
 
@@ -317,6 +318,8 @@ void handleBreathingAnimation(unsigned long now);
 void handleRouletteSpin(unsigned long now);
 void handleDecisionSpin(unsigned long now);
 void drawHeart(int cx, int cy, int size);
+void printCentered(const char* text, int y, uint8_t maxSize = 3);
+void printCentered(const String& str, int y, uint8_t maxSize = 3);
 void drawPet(int cx, int cy, uint8_t animState, int bounceY);
 void drawCake(int cx, int cy);
 uint16_t cheapRandom(uint16_t maxVal);
@@ -369,6 +372,7 @@ void setup() {
   }
 
   display.clearDisplay();
+  display.setTextWrap(false);
   display.display();
 
   rngState = (uint16_t)(analogRead(A0) ^ millis());
@@ -464,12 +468,6 @@ void loop() {
   // Auto-dismiss pet interaction animation
   if (currentState == PET_VIEW && petAnimState != 0 && (now - petAnimStart > 2200)) {
     petAnimState = 0;
-    updateDisplay();
-  }
-
-  // Auto-dismiss live note sent from phone
-  if (currentState == LIVE_NOTE_DISPLAY && (now - liveNoteStart > 15000)) {
-    currentState = MENU;
     updateDisplay();
   }
 
@@ -663,6 +661,7 @@ void handleSendNote() {
     }
     currentState = LIVE_NOTE_DISPLAY;
     lastActivityTime = millis();
+    buttonIgnoreUntil = millis() + 1500; // Block false button triggers during Wi-Fi transmission
     updateDisplay();
 
     String res = F("<!DOCTYPE html><html><head><meta name='viewport' content='width=device-width,initial-scale=1'>"
@@ -671,7 +670,9 @@ void handleSendNote() {
                    "h2{color:#e63946;}a{color:#e63946;font-weight:700;}</style></head><body>"
                    "<div class='c'><h2>Sent with Love! 💖</h2><p>Your note is on ");
     res += String(cfgGfName);
-    res += F("'s desk right now!</p><p><a href='/'>Send another note</a></p></div></body></html>");
+    res += F("'s desk right now!</p>"
+             "<p style='color:#666;font-size:13px;'>It will stay on her screen until she clicks the dial to dismiss.</p>"
+             "<p><a href='/'>Send another note</a></p></div></body></html>");
     server.send(200, "text/html", res);
   } else {
     server.send(400, "text/plain", "Missing lines");
@@ -852,25 +853,13 @@ void bootAnimation() {
     display.clearDisplay();
     display.setTextColor(WHITE);
     String greeting = "Hi " + String(cfgGfName) + "!";
-    int len = greeting.length();
-    int tSize = (len > 9) ? 1 : 2;
-    display.setTextSize(tSize);
-    int charW = (tSize == 2) ? 12 : 6;
-    int w = len * charW;
-    display.setCursor((128 - w) / 2, (tSize == 2) ? 4 : 8);
-    display.print(greeting);
+    printCentered(greeting, 4, 2);
     display.display();
   } else if (elapsed < 2600) {
     display.clearDisplay();
     display.setTextColor(WHITE);
     String greeting = "Hi " + String(cfgGfName) + "!";
-    int len = greeting.length();
-    int tSize = (len > 9) ? 1 : 2;
-    display.setTextSize(tSize);
-    int charW = (tSize == 2) ? 12 : 6;
-    int w = len * charW;
-    display.setCursor((128 - w) / 2, (tSize == 2) ? 0 : 4);
-    display.print(greeting);
+    printCentered(greeting, 0, 2);
 
     int heartPhase = ((elapsed - 600) / 250) % 4;
     int heartSize = (heartPhase < 2) ? 9 + heartPhase * 3 : 15 - heartPhase * 2;
@@ -891,6 +880,35 @@ void bootAnimation() {
 // ============================================================================
 //  GRAPHICS HELPERS
 // ============================================================================
+void printCentered(const char* text, int y, uint8_t maxSize) {
+  int len = strlen(text);
+  if (len == 0) return;
+
+  uint8_t size = 1;
+  if (maxSize >= 4 && len <= 4) {
+    size = 4;
+  } else if (maxSize >= 3 && len <= 6) {
+    size = 3;
+  } else if (maxSize >= 2 && len <= 10) {
+    size = 2;
+  } else {
+    size = 1;
+  }
+
+  int charWidth = size * 6;
+  int totalWidth = len * charWidth;
+  int x = (128 - totalWidth) / 2;
+  if (x < 0) x = 0;
+
+  display.setTextSize(size);
+  display.setCursor(x, y);
+  display.print(text);
+}
+
+void printCentered(const String& str, int y, uint8_t maxSize) {
+  printCentered(str.c_str(), y, maxSize);
+}
+
 void drawHeart(int cx, int cy, int size) {
   int r = size / 3;
   if (r < 2) r = 2;
@@ -1133,12 +1151,8 @@ void renderMenu() {
     display.print(greetLabels[greetIntervalIdx]);
   }
 
-  // Large menu text
-  display.setTextSize(3);
-  String item = mainMenuItems[menuIndex];
-  int w = item.length() * 18;
-  display.setCursor((128 - w) / 2, 26);
-  display.print(item);
+  // Menu text: auto-fit in Size 2 (crisp & never wraps!)
+  printCentered(mainMenuItems[menuIndex], 26, 2);
 
   // Bottom navigation dots
   display.setTextSize(1);
@@ -1146,9 +1160,9 @@ void renderMenu() {
   int dotsX = (128 - dotsWidth) / 2;
   for (uint8_t i = 0; i < MAIN_MENU_COUNT; i++) {
     if (i == menuIndex) {
-      display.fillCircle(dotsX + i * 6 + 2, 60, 2, WHITE);
+      display.fillCircle(dotsX + i * 6 + 2, 58, 2, WHITE);
     } else {
-      display.drawCircle(dotsX + i * 6 + 2, 60, 1, WHITE);
+      display.drawCircle(dotsX + i * 6 + 2, 58, 1, WHITE);
     }
   }
 }
@@ -1213,49 +1227,29 @@ void renderDays() {
 
   if (daysSubIndex == 0) {
     // Anniversary countdown
-    display.setCursor(20, 4);
-    display.print(F("Our Anniversary <3"));
+    printCentered(F("Our Anniversary <3"), 4, 1);
 
     int days = getDaysUntil(cfgAnnivMonth, cfgAnnivDay);
     if (days == -1) {
-      display.setTextSize(1);
-      display.setCursor(8, 28);
-      display.print(F("Sync WiFi in menu"));
-      display.setCursor(8, 42);
-      display.print(F("or set dates on phone"));
+      printCentered(F("Sync WiFi in menu"), 24, 1);
+      printCentered(F("or set dates on phone"), 38, 1);
     } else if (days == 0) {
-      display.setTextSize(2);
-      display.setCursor(20, 32);
-      display.print(F("TODAY!! <3"));
+      printCentered(F("TODAY!! <3"), 28, 2);
     } else {
-      display.setTextSize(3);
-      String s = "in " + String(days) + "d";
-      int w = s.length() * 18;
-      display.setCursor((128 - w) / 2, 28);
-      display.print(s);
+      printCentered("in " + String(days) + "d", 28, 3);
     }
   } else if (daysSubIndex == 1) {
     // Birthday countdown
-    display.setCursor(16, 4);
-    display.print(String(cfgGfName) + "'s Birthday *");
+    printCentered(String(cfgGfName) + F("'s Birthday <3"), 4, 1);
 
     int days = getDaysUntil(cfgBdayMonth, cfgBdayDay);
     if (days == -1) {
-      display.setTextSize(1);
-      display.setCursor(8, 28);
-      display.print(F("Sync WiFi in menu"));
-      display.setCursor(8, 42);
-      display.print(F("or set dates on phone"));
+      printCentered(F("Sync WiFi in menu"), 24, 1);
+      printCentered(F("or set dates on phone"), 38, 1);
     } else if (days == 0) {
-      display.setTextSize(2);
-      display.setCursor(20, 32);
-      display.print(F("TODAY!! 🎂"));
+      printCentered(F("TODAY!! <3"), 28, 2);
     } else {
-      display.setTextSize(3);
-      String s = "in " + String(days) + "d";
-      int w = s.length() * 18;
-      display.setCursor((128 - w) / 2, 28);
-      display.print(s);
+      printCentered("in " + String(days) + "d", 28, 3);
     }
   } else {
     // Live Clock & Date
@@ -1264,27 +1258,21 @@ void renderDays() {
       struct tm* t = localtime(&now);
       char dateBuf[20];
       strftime(dateBuf, sizeof(dateBuf), "%d %b %Y", t);
-      display.setCursor((128 - strlen(dateBuf) * 6) / 2, 4);
-      display.print(dateBuf);
+      printCentered(dateBuf, 4, 1);
 
       char timeBuf[10];
       strftime(timeBuf, sizeof(timeBuf), "%H:%M", t);
-      display.setTextSize(3);
-      display.setCursor((128 - 5 * 18) / 2, 28);
-      display.print(timeBuf);
+      printCentered(timeBuf, 26, 3);
     } else {
-      display.setCursor(24, 4);
-      display.print(F("Internet Clock"));
-      display.setTextSize(1);
-      display.setCursor(14, 32);
-      display.print(F("Connecting WiFi..."));
+      printCentered(F("Internet Clock"), 4, 1);
+      printCentered(F("Connecting WiFi..."), 30, 1);
     }
   }
 
   // Bottom dots indicator (3 pages)
   for (uint8_t i = 0; i < 3; i++) {
-    if (i == daysSubIndex) display.fillCircle(56 + i * 8, 60, 2, WHITE);
-    else display.drawCircle(56 + i * 8, 60, 1, WHITE);
+    if (i == daysSubIndex) display.fillCircle(56 + i * 8, 58, 2, WHITE);
+    else display.drawCircle(56 + i * 8, 58, 1, WHITE);
   }
 }
 
@@ -1292,136 +1280,72 @@ void renderDays() {
 void renderCelebration() {
   if (celebrationType == 1) {
     // Birthday!
-    display.setTextSize(1);
-    display.setCursor(14, 4);
-    display.print(F("HAPPY BIRTHDAY! <3"));
-    drawCake(64, 38);
-    display.setTextSize(2);
-    String n = String(cfgGfName) + "!";
-    display.setCursor((128 - n.length() * 12) / 2, 48);
-    display.print(n);
+    printCentered(F("HAPPY BIRTHDAY! <3"), 4, 1);
+    drawCake(64, 34);
+    printCentered(String(cfgGfName) + "!", 48, 2);
   } else {
     // Anniversary!
-    display.setTextSize(1);
-    display.setCursor(8, 4);
-    display.print(F("HAPPY ANNIVERSARY! <3"));
-    drawHeart(64, 36, 16);
-    display.setTextSize(1);
-    display.setCursor(24, 52);
-    display.print(F("Forever & Always"));
+    printCentered(F("HAPPY ANNIVERSARY! <3"), 4, 1);
+    drawHeart(64, 32, 14);
+    printCentered(F("Forever & Always <3"), 50, 1);
   }
 }
 
 // ── Render: Live Love Note Sent From Phone ───────────────────────────────────
 void renderLiveNote() {
-  display.setTextSize(1);
-  display.setCursor(4, 4);
-  display.print(F("Live Note for "));
-  display.print(cfgGfName);
-  display.print(F(" <3"));
+  printCentered(String(F("Note for ")) + cfgGfName + F(" <3"), 4, 1);
 
-  int len1 = strlen(liveNoteLine1);
-  int sz1 = (len1 > 7) ? 2 : 3;
-  display.setTextSize(sz1);
-  int w1 = len1 * ((sz1 == 3) ? 18 : 12);
-  display.setCursor((128 - w1) / 2, 22);
-  display.print(liveNoteLine1);
+  printCentered(liveNoteLine1, 20, 2);
+  printCentered(liveNoteLine2, 38, 2);
 
-  int len2 = strlen(liveNoteLine2);
-  int sz2 = (len2 > 7) ? 2 : 3;
-  display.setTextSize(sz2);
-  int w2 = len2 * ((sz2 == 3) ? 18 : 12);
-  display.setCursor((128 - w2) / 2, 42);
-  display.print(liveNoteLine2);
-
-  drawHeart(118, 56, 4);
+  printCentered(F("[Click to Dismiss]"), 55, 1);
 }
 
 // ── Render: Wi-Fi Portal Status ─────────────────────────────────────────────
 void renderWiFiPortal() {
-  display.setTextSize(1);
-  display.setCursor(20, 4);
-  display.print(F("Phone Web Setup"));
+  printCentered(F("Phone Web Setup"), 4, 1);
 
   if (WiFi.status() == WL_CONNECTED) {
-    display.setCursor(4, 22);
+    display.setCursor(4, 18);
     display.print(F("Connected to:"));
-    display.setCursor(4, 32);
+    display.setCursor(4, 28);
     display.print(cfgWifiSSID);
-    display.setCursor(4, 44);
+    display.setCursor(4, 42);
     display.print(F("Open on phone:"));
-    display.setCursor(4, 54);
+    display.setCursor(4, 52);
     display.print(F("http://iglet.local"));
   } else {
-    display.setCursor(4, 20);
-    display.print(F("1. Join Wi-Fi:"));
-    display.setTextSize(2);
-    display.setCursor(4, 30);
-    display.print(F("Iglet-Setup"));
-    display.setTextSize(1);
-    display.setCursor(4, 48);
-    display.print(F("2. Open: 192.168.4.1"));
+    display.setCursor(4, 18);
+    display.print(F("1. Join Hotspot:"));
+    printCentered(F("Iglet-Setup"), 28, 1);
+    display.setCursor(4, 42);
+    display.print(F("2. Open in browser:"));
+    printCentered(F("http://192.168.4.1"), 52, 1);
   }
 }
 
 // ── Render: Timer Up ────────────────────────────────────────────────────────
 void renderTimerUp() {
-  display.setTextSize(2);
-  String topText = "Focus! \x18";
-  int tw = topText.length() * 12;
-  display.setCursor((128 - tw) / 2, 0);
-  display.print(topText);
-
-  display.setTextSize(4);
-  String mins = String(elapsedMinutes);
-  int mw = mins.length() * 24;
-  display.setCursor((128 - mw) / 2, 30);
-  display.print(mins);
+  printCentered(F("Focus! ^"), 4, 1);
+  printCentered(String(elapsedMinutes), 24, 3);
 }
 
 // ── Render: Timer Down ──────────────────────────────────────────────────────
 void renderTimerDown() {
-  display.setTextSize(2);
-  String topText = (currentState == SELECTING_DOWN_DURATION) ? "Set time" : "Focus! \x19";
-  int tw = topText.length() * 12;
-  display.setCursor((128 - tw) / 2, 0);
-  display.print(topText);
-
-  display.setTextSize(4);
-  String mins = String(countdownValue);
-  int mw = mins.length() * 24;
-  display.setCursor((128 - mw) / 2, 30);
-  display.print(mins);
+  printCentered((currentState == SELECTING_DOWN_DURATION) ? F("Set Time (min)") : F("Focus! v"), 4, 1);
+  printCentered(String(countdownValue), 24, 3);
 }
 
 // ── Render: Pomodoro Select ─────────────────────────────────────────────────
 void renderPomoSelect(bool isFocus) {
-  display.setTextSize(2);
-  String topText = isFocus ? "Set Focus" : "Set Rest";
-  int tw = topText.length() * 12;
-  display.setCursor((128 - tw) / 2, 0);
-  display.print(topText);
-
-  display.setTextSize(4);
-  String mins = String(countdownValue);
-  int mw = mins.length() * 24;
-  display.setCursor((128 - mw) / 2, 30);
-  display.print(mins);
+  printCentered(isFocus ? F("Set Focus (min)") : F("Set Rest (min)"), 4, 1);
+  printCentered(String(countdownValue), 24, 3);
 }
 
 // ── Render: Pomodoro Running ────────────────────────────────────────────────
 void renderPomoRunning(bool isFocus) {
-  display.setTextSize(2);
-  String topText = isFocus ? "Focus! \x19" : "Rest! <3";
-  int tw = topText.length() * 12;
-  display.setCursor((128 - tw) / 2, 0);
-  display.print(topText);
-
-  display.setTextSize(4);
-  String mins = String(countdownValue);
-  int mw = mins.length() * 24;
-  display.setCursor((128 - mw) / 2, 30);
-  display.print(mins);
+  printCentered(isFocus ? F("Focus! v") : F("Rest! <3"), 4, 1);
+  printCentered(String(countdownValue), 24, 3);
 }
 
 // ── Render: Love Notes ──────────────────────────────────────────────────────
@@ -1439,33 +1363,16 @@ void renderLoveNote() {
 
   uint8_t idx = (currentNoteIndex % LOVE_NOTE_COUNT) * 3;
 
-  display.setTextSize(2);
-  const char* line1 = loveNotes[idx];
-  int w1 = strlen(line1) * 12;
-  display.setCursor((128 - w1) / 2, 22);
-  display.print(line1);
-
-  display.setTextSize(2);
-  const char* line2 = loveNotes[idx + 1];
-  int w2 = strlen(line2) * 12;
-  display.setCursor((128 - w2) / 2, 42);
-  display.print(line2);
+  printCentered(loveNotes[idx], 20, 2);
+  printCentered(loveNotes[idx + 1], 38, 2);
 }
 
 // ── Render: Compliment ──────────────────────────────────────────────────────
 void renderCompliment() {
-  display.setTextSize(2);
-  display.setCursor(18, 0);
-  display.print(F("Spin me!"));
+  printCentered(F("Spin me!"), 4, 1);
 
   const char* comp = compliments[rouletteIndex % COMPLIMENT_COUNT];
-  int len = strlen(comp);
-  int textSize = (len > 7) ? 2 : 3;
-  display.setTextSize(textSize);
-  int charW = (textSize == 3) ? 18 : 12;
-  int w = len * charW;
-  display.setCursor((128 - w) / 2, (textSize == 3) ? 28 : 34);
-  display.print(comp);
+  printCentered(comp, 26, 3);
 
   if (currentState == COMPLIMENT_RESULT) {
     display.drawPixel(10, 24, WHITE);
@@ -1479,108 +1386,50 @@ void renderCompliment() {
 
 // ── Render: Decision ────────────────────────────────────────────────────────
 void renderDecision() {
-  display.setTextSize(2);
-  display.setCursor(14, 0);
-  display.print(F("Ask me!"));
+  printCentered(F("Ask me!"), 4, 1);
 
   if (currentState == DECISION_RESULT) {
     const char* answer = oracleAnswers[decisionIndex % ORACLE_COUNT];
-    int len = strlen(answer);
-    int textSize = (len > 7) ? 2 : 3;
-    display.setTextSize(textSize);
-    int charW = (textSize == 3) ? 18 : 12;
-    int w = len * charW;
-    display.setCursor((128 - w) / 2, (textSize == 3) ? 28 : 34);
-    display.print(answer);
+    printCentered(answer, 26, 3);
   } else {
-    display.setTextSize(4);
-    display.setCursor(52, 26);
-    display.print(F("?"));
+    printCentered(F("?"), 24, 4);
   }
 }
 
 // ── Render: Breathing Select ────────────────────────────────────────────────
 void renderBreathSelect() {
-  display.setTextSize(2);
-  display.setCursor(14, 0);
-  display.print(F("Breathe"));
-
-  display.setTextSize(1);
-  display.setCursor(30, 22);
-  display.print(F("Cycles:"));
-
-  display.setTextSize(3);
-  String cyc = String(breathCycles);
-  int w = cyc.length() * 18;
-  display.setCursor((128 - w) / 2, 36);
-  display.print(cyc);
+  printCentered(F("Breathe"), 4, 1);
+  printCentered(F("Cycles:"), 20, 1);
+  printCentered(String(breathCycles), 34, 3);
 }
 
 // ── Render: Mood Select ─────────────────────────────────────────────────────
 void renderMoodSelect() {
-  display.setTextSize(2);
-  display.setCursor(20, 0);
-  display.print(F("How r u?"));
-
-  drawMoodFace(moodSelection, 64, 38, 12);
-
-  display.setTextSize(1);
-  const char* label = moodLabels[moodSelection];
-  int w = strlen(label) * 6;
-  display.setCursor((128 - w) / 2, 56);
-  display.print(label);
+  printCentered(F("How are you?"), 4, 1);
+  drawMoodFace(moodSelection, 64, 34, 12);
+  printCentered(moodLabels[moodSelection], 52, 1);
 }
 
 // ── Render: Mood Response ───────────────────────────────────────────────────
 void renderMoodResponse() {
-  display.setTextSize(2);
-  const char* r1 = moodResponses[moodSelection][0];
-  int w1 = strlen(r1) * 12;
-  display.setCursor((128 - w1) / 2, 4);
-  display.print(r1);
-
-  display.setTextSize(2);
-  const char* r2 = moodResponses[moodSelection][1];
-  int w2 = strlen(r2) * 12;
-  display.setCursor((128 - w2) / 2, 34);
-  display.print(r2);
+  printCentered(moodResponses[moodSelection][0], 18, 2);
+  printCentered(moodResponses[moodSelection][1], 38, 2);
 }
 
 // ── Render: Auto-Wake Interval Setting ──────────────────────────────────────
 void renderGreetSelect() {
-  display.setTextSize(2);
-  display.setCursor(14, 0);
-  display.print(F("Auto Wake"));
-
-  display.setTextSize(1);
-  display.setCursor(28, 22);
-  display.print(F("Wake every:"));
-
-  display.setTextSize(3);
-  const char* lbl = greetLabels[greetIntervalIdx];
-  int w = strlen(lbl) * 18;
-  display.setCursor((128 - w) / 2, 36);
-  display.print(lbl);
+  printCentered(F("Auto Wake"), 4, 1);
+  printCentered(F("Wake every:"), 20, 1);
+  printCentered(greetLabels[greetIntervalIdx], 34, 3);
 }
 
 // ── Render: Gentle Reminder ─────────────────────────────────────────────────
 void renderReminder() {
-  display.setTextSize(1);
-  display.setCursor(4, 4);
-  display.print(F("Gentle Reminder <3"));
+  printCentered(F("Gentle Reminder <3"), 4, 1);
 
   uint8_t rIdx = (currentReminderIndex % REMINDER_COUNT) * 3;
-  display.setTextSize(2);
-  const char* r1 = reminderMsgs[rIdx];
-  int w1 = strlen(r1) * 12;
-  display.setCursor((128 - w1) / 2, 22);
-  display.print(r1);
-
-  display.setTextSize(2);
-  const char* r2 = reminderMsgs[rIdx + 1];
-  int w2 = strlen(r2) * 12;
-  display.setCursor((128 - w2) / 2, 42);
-  display.print(r2);
+  printCentered(reminderMsgs[rIdx], 20, 2);
+  printCentered(reminderMsgs[rIdx + 1], 38, 2);
 }
 
 // ── Render: Greeting ────────────────────────────────────────────────────────
@@ -1624,12 +1473,10 @@ void handleDecisionSpin(unsigned long now) {
       decisionIndex = (decisionIndex + 1) % ORACLE_COUNT;
       display.clearDisplay();
       display.setTextColor(WHITE);
-      display.setTextSize(2);
-      display.setCursor(14, 0);
-      display.print(F("Thinking"));
+      printCentered(F("Thinking..."), 4, 1);
 
       display.setTextSize(4);
-      display.setCursor(52, 26);
+      display.setCursor(52, 24);
       int phase = (elapsed / 160) % 3;
       if (phase == 0) display.print(F("?"));
       else if (phase == 1) display.print(F("!"));
@@ -1769,11 +1616,27 @@ int getRotation() {
 }
 
 bool buttonPressed(unsigned long now) {
-  if (digitalRead(SW) == LOW && (now - buttonDebounceTime > buttonDebounceDelay)) {
-    buttonDebounceTime = now;
-    lastActivityTime = now;
-    return true;
+  if (buttonIgnoreUntil != 0) {
+    if ((long)(now - buttonIgnoreUntil) < 0) {
+      return false;
+    }
+    buttonIgnoreUntil = 0;
   }
+
+  static int lastButtonReading = HIGH;
+  int reading = digitalRead(SW);
+
+  // Detect falling edge (HIGH -> LOW)
+  if (lastButtonReading == HIGH && reading == LOW) {
+    if (now - buttonDebounceTime > buttonDebounceDelay) {
+      buttonDebounceTime = now;
+      lastActivityTime = now;
+      lastButtonReading = reading;
+      return true;
+    }
+  }
+
+  lastButtonReading = reading;
   return false;
 }
 
@@ -1792,7 +1655,6 @@ void handleRotaryInput(unsigned long now) {
     case IDLE:
     case GREETING_WAKEUP:
     case REMINDER_DISPLAY:
-    case LIVE_NOTE_DISPLAY:
       currentState = MENU;
       if (displayOff) {
         display.ssd1306_command(SSD1306_DISPLAYON);
@@ -1871,13 +1733,22 @@ void handleButtonPresses(unsigned long now) {
     case COMPLIMENT_RESULT:
     case DECISION_RESULT:
     case MOOD_RESPONSE:
-    case LIVE_NOTE_DISPLAY:
     case WIFI_PORTAL_VIEW:
     case DAYS_VIEW:
       currentState = MENU;
       if (displayOff) {
         display.ssd1306_command(SSD1306_DISPLAYON);
         displayOff = false;
+      }
+      break;
+
+    case LIVE_NOTE_DISPLAY:
+      if (now - liveNoteStart >= 1200) {
+        currentState = MENU;
+        if (displayOff) {
+          display.ssd1306_command(SSD1306_DISPLAYON);
+          displayOff = false;
+        }
       }
       break;
 
