@@ -220,7 +220,7 @@ unsigned long lastRotaryTime = 0;
 const unsigned long rotaryDebounceDelay = 120;
 
 // ── Inactivity & Sleep ──────────────────────────────────────────────────────
-const unsigned long inactivityLimit = 2UL * 60000UL;      // 2 min to sleep
+const unsigned long inactivityLimit = 5UL * 60000UL;      // 5 min to sleep (generous & comfortable)
 const unsigned long displayOffTimeLimit = 30UL * 60000UL; // 30 min to display off
 unsigned long idleStartTime = 0;
 bool displayOff = false;
@@ -306,8 +306,8 @@ unsigned long celebrationStart = 0;
 void updateDisplay();
 void successAnimation();
 int  getRotation();
-bool buttonPressed();
-void handleRotaryInput();
+bool buttonPressed(unsigned long now);
+void handleRotaryInput(unsigned long now);
 void handleButtonPresses(unsigned long now);
 void handleMenuSelection(unsigned long now);
 void handleCounting(unsigned long now);
@@ -494,7 +494,7 @@ void loop() {
   }
 
   // Inputs and background handlers
-  handleRotaryInput();
+  handleRotaryInput(now);
   handleButtonPresses(now);
   handleCounting(now);
   handleInactivity(now);
@@ -863,6 +863,7 @@ void bootAnimation() {
     checkDateCelebration();
     if (currentState != CELEBRATION_DISPLAY) {
       currentState = MENU;
+      lastActivityTime = millis();
       updateDisplay();
     }
   }
@@ -1748,20 +1749,20 @@ int getRotation() {
   return 0;
 }
 
-bool buttonPressed() {
-  if (digitalRead(SW) == LOW && (millis() - buttonDebounceTime > buttonDebounceDelay)) {
-    buttonDebounceTime = millis();
-    lastActivityTime = millis();
+bool buttonPressed(unsigned long now) {
+  if (digitalRead(SW) == LOW && (now - buttonDebounceTime > buttonDebounceDelay)) {
+    buttonDebounceTime = now;
+    lastActivityTime = now;
     return true;
   }
   return false;
 }
 
-void handleRotaryInput() {
+void handleRotaryInput(unsigned long now) {
   int rotation = getRotation();
   if (rotation == 0) return;
 
-  lastActivityTime = millis();
+  lastActivityTime = now;
 
   switch (currentState) {
     case MENU:
@@ -1838,7 +1839,7 @@ void handleRotaryInput() {
 }
 
 void handleButtonPresses(unsigned long now) {
-  if (!buttonPressed()) return;
+  if (!buttonPressed(now)) return;
 
   switch (currentState) {
     case MENU:
@@ -2142,7 +2143,7 @@ void handleInactivity(unsigned long now) {
                   currentState == PET_VIEW || currentState == DAYS_VIEW ||
                   currentState == WIFI_PORTAL_VIEW);
 
-  if (mayIdle && (now - lastActivityTime > inactivityLimit)) {
+  if (mayIdle && (now >= lastActivityTime) && (now - lastActivityTime > inactivityLimit)) {
     if (currentState != IDLE) {
       currentState = IDLE;
       idleStartTime = now;
@@ -2151,7 +2152,7 @@ void handleInactivity(unsigned long now) {
     }
   }
 
-  if (currentState == IDLE && !displayOff &&
+  if (currentState == IDLE && !displayOff && (now >= idleStartTime) &&
       (now - idleStartTime > displayOffTimeLimit)) {
     displayOff = true;
     display.ssd1306_command(SSD1306_DISPLAYOFF);
