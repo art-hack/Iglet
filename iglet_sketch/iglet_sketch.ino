@@ -423,6 +423,13 @@ void loop() {
     }
   }
 
+  // Check if NTP time just synced
+  static bool celebrationChecked = false;
+  if (!celebrationChecked && time(nullptr) > 100000) {
+    celebrationChecked = true;
+    checkDateCelebration();
+  }
+
   // Priority boot animation
   if (currentState == BOOT_ANIM) {
     bootAnimation();
@@ -765,8 +772,23 @@ int getDaysUntil(int targetMonth, int targetDay) {
   if (now < 100000) return -1;  // NTP not synced yet
 
   struct tm* t = localtime(&now);
-  int curYear = t->tm_year + 1900;
+  int curMonth = t->tm_mon + 1;
+  int curDay   = t->tm_mday;
+  int curYear  = t->tm_year + 1900;
 
+  // Direct check for TODAY!
+  if (curMonth == targetMonth && curDay == targetDay) {
+    return 0;
+  }
+
+  // Midnight of today
+  struct tm today = *t;
+  today.tm_hour = 0;
+  today.tm_min  = 0;
+  today.tm_sec  = 0;
+  time_t todayMid = mktime(&today);
+
+  // Midnight of target date this year
   struct tm target = *t;
   target.tm_year = curYear - 1900;
   target.tm_mon  = targetMonth - 1;
@@ -774,19 +796,17 @@ int getDaysUntil(int targetMonth, int targetDay) {
   target.tm_hour = 0;
   target.tm_min  = 0;
   target.tm_sec  = 0;
+  time_t targetMid = mktime(&target);
 
-  time_t targetTime = mktime(&target);
-  double diffSec = difftime(targetTime, now);
-
-  if (diffSec < -86400.0) {
+  if (targetMid < todayMid) {
+    // Already passed this year -> count to next year!
     target.tm_year = curYear - 1900 + 1;
-    targetTime = mktime(&target);
-    diffSec = difftime(targetTime, now);
+    targetMid = mktime(&target);
   }
 
-  int days = (int)(diffSec / 86400.0) + 1;
-  if (days < 0) days = 0;
-  return days;
+  double diff = difftime(targetMid, todayMid);
+  int days = (int)((diff + 43200.0) / 86400.0);
+  return (days < 0) ? 0 : days;
 }
 
 bool isToday(int month, int day) {
