@@ -142,9 +142,13 @@ float cfgTzOffset         = TIMEZONE_OFFSET_HRS;
 char cfgTelegramToken[80] = TELEGRAM_BOT_TOKEN;
 char cfgTelegramChatId[32]= TELEGRAM_CHAT_ID;
 unsigned long lastTelegramPoll = 0;
-const unsigned long telegramPollInterval = 3500;
+const unsigned long telegramPollInterval = 10000; // 10s idle check
 long lastTelegramUpdateId = 0;
 bool telegramInitialized = false;
+
+// ── Hardware Interrupt Flags ────────────────────────────────────────────────
+volatile int rotaryDelta = 0;
+volatile bool buttonWasClicked = false;
 
 // ============================================================================
 //  WEB SERVER & NETWORKING
@@ -330,6 +334,8 @@ void updateDisplay();
 void successAnimation();
 int  getRotation();
 bool buttonPressed(unsigned long now);
+void ICACHE_RAM_ATTR handleEncoderInterrupt();
+void ICACHE_RAM_ATTR handleButtonInterrupt();
 bool sendTelegramMessage(const char* chatId, const String& text);
 void sendTelegramMood(uint8_t mood);
 void checkTelegramUpdates();
@@ -389,6 +395,10 @@ void setup() {
   pinMode(DT, INPUT_PULLUP);
   pinMode(SW, INPUT_PULLUP);
 
+  attachInterrupt(digitalPinToInterrupt(CLK), handleEncoderInterrupt, CHANGE);
+  attachInterrupt(digitalPinToInterrupt(DT),  handleEncoderInterrupt, CHANGE);
+  attachInterrupt(digitalPinToInterrupt(SW),  handleButtonInterrupt, FALLING);
+
   Serial.begin(9600);
   Serial.println(F("\nStarting Iglet..."));
 
@@ -433,10 +443,12 @@ void loop() {
   server.handleClient();
   MDNS.update();
 
-  // Check background Telegram Bot updates (only if connected, token provided, and user is not actively twisting rotary dial)
+  // Check background Telegram Bot updates (only if connected, token provided, user has been idle for >= 6s, and not inside a timer/animation)
   if (WiFi.status() == WL_CONNECTED && strlen(cfgTelegramToken) > 10) {
-    if (now - lastActivityTime > 2500) {
-      checkTelegramUpdates();
+    if (now - lastActivityTime > 6000) {
+      if (currentState == MENU || currentState == IDLE || currentState == LIVE_NOTE_DISPLAY) {
+        checkTelegramUpdates();
+      }
     }
   }
 
@@ -886,7 +898,7 @@ void checkTelegramUpdates() {
   WiFiClientSecure client;
   client.setInsecure();
   client.setBufferSizes(1024, 256);
-  client.setTimeout(2500);
+  client.setTimeout(1800);
 
   if (!client.connect("api.telegram.org", 443)) {
     return;
@@ -905,8 +917,9 @@ void checkTelegramUpdates() {
                "Connection: close\r\n\r\n");
 
   unsigned long tStart = millis();
-  while (!client.available() && millis() - tStart < 2000) {
+  while (!client.available() && millis() - tStart < 1200) {
     delay(10);
+    yield();
   }
 
   if (!client.available()) {
@@ -2049,67 +2062,65 @@ void handleReminders(unsigned long now) {
 }
 
 // ============================================================================
-//  INPUT HANDLING
+//  INPUT HANDLING (Hardware Interrupts + Polling Fallback)
 // ============================================================================
-int getRotation() {
+ICACHE_RAM_ATTR void handleEncoderInterrupt() {
   static uint8_t prev = 0xFF;
   static int8_t count = 0;
   static unsigned long lastTurnTime = 0;
 
-  // Diagnostic tracking to alert user if DT wire is disconnected / loose on D7
-  static uint16_t clkTransitions = 0;
-  static uint16_t dtTransitions = 0;
-  static uint8_t lastClk = 1, lastDt = 1;
-
-  uint8_t clk = digitalRead(CLK);
-  uint8_t dt  = digitalRead(DT);
-
-  if (clk != lastClk) { clkTransitions++; lastClk = clk; }
-  if (dt != lastDt)   { dtTransitions++;  lastDt = dt;   }
-
-  static unsigned long lastDiagTime = 0;
-  if (millis() - lastDiagTime > 3000) {
-    lastDiagTime = millis();
-    if (clkTransitions > 10 && dtTransitions == 0) {
-      Serial.println(F("[ROTARY WARNING] CLK toggled but DT is stuck HIGH! Check if DT jumper is firmly connected to D7!"));
-    }
-  }
-
+  uint8_t clk = (uint8_t)digitalRead(CLK);
+  uint8_t dt  = (uint8_t)digitalRead(DT);
   uint8_t curr = (clk << 1) | dt;
 
   if (prev == 0xFF) {
     prev = curr;
-    return 0;
+    return;
   }
 
   if (curr != prev) {
     uint8_t idx = (prev << 2) | curr;
     prev = curr;
 
-    // Full 16-state Gray code transition lookup
     static const int8_t encTable[16] = {
-      0, -1,  1,  0,
-      1,  0,  0, -1,
-     -1,  0,  0,  1,
-      0,  1, -1,  0
+       0, -1,  1,  0,
+       1,  0,  0, -1,
+      -1,  0,  0,  1,
+       0,  1, -1,  0
     };
 
     int8_t step = encTable[idx];
     if (step != 0) {
       count += step;
-
-      // When settled into detent (curr == 3 or curr == 0)
       if ((curr == 3 || curr == 0) && (count >= 2 || count <= -2)) {
         int result = (count > 0) ? 1 : -1;
         count = 0;
-
         unsigned long now = millis();
-        if (now - lastTurnTime > 50) {
+        if (now - lastTurnTime > 35) {
           lastTurnTime = now;
-          return result;
+          rotaryDelta += result;
         }
       }
     }
+  }
+}
+
+ICACHE_RAM_ATTR void handleButtonInterrupt() {
+  static unsigned long lastPressTime = 0;
+  unsigned long now = millis();
+  if (now - lastPressTime > 300) {
+    buttonWasClicked = true;
+    lastPressTime = now;
+  }
+}
+
+int getRotation() {
+  if (rotaryDelta != 0) {
+    noInterrupts();
+    int delta = rotaryDelta;
+    rotaryDelta = 0;
+    interrupts();
+    return (delta > 0) ? 1 : -1;
   }
   return 0;
 }
@@ -2117,9 +2128,17 @@ int getRotation() {
 bool buttonPressed(unsigned long now) {
   if (buttonIgnoreUntil != 0) {
     if ((long)(now - buttonIgnoreUntil) < 0) {
+      buttonWasClicked = false;
       return false;
     }
     buttonIgnoreUntil = 0;
+  }
+
+  if (buttonWasClicked) {
+    buttonWasClicked = false;
+    buttonDebounceTime = now;
+    lastActivityTime = now;
+    return true;
   }
 
   static int lastButtonReading = HIGH;
