@@ -157,6 +157,7 @@ enum State {
   POMODORO_REST,
   // ── Iglet Companion states ──
   LOVE_NOTE_DISPLAY,
+  PET_VIEW,
   COMPLIMENT_ROULETTE,
   COMPLIMENT_RESULT,
   DECISION_ORACLE,
@@ -174,17 +175,18 @@ State currentState = BOOT_ANIM;
 // ── Main Menu ───────────────────────────────────────────────────────────────
 const char* const mainMenuItems[] = {
   "Notes",       // 0: Love notes
-  "Spin!",       // 1: Compliment roulette
-  "Decide",      // 2: Decision maker
-  "Breathe",     // 3: Breathing exercise
-  "Mood",        // 4: Mood check-in
-  "Wake",        // 5: Auto-wake interval settings
-  "UP",          // 6: Count up focus timer
-  "DOWN",        // 7: Countdown focus timer
-  "POMO",        // 8: Pomodoro focus timer
-  "Reset"        // 9: Reset total flow minutes
+  "Pet",         // 1: Virtual Pet (Tamagotchi-lite!)
+  "Spin!",       // 2: Compliment roulette
+  "Decide",      // 3: Decision maker
+  "Breathe",     // 4: Breathing exercise
+  "Mood",        // 5: Mood check-in
+  "Wake",        // 6: Auto-wake interval settings
+  "UP",          // 7: Count up focus timer
+  "DOWN",        // 8: Countdown focus timer
+  "POMO",        // 9: Pomodoro focus timer
+  "Reset"        // 10: Reset total flow minutes
 };
-const uint8_t MAIN_MENU_COUNT = 10;
+const uint8_t MAIN_MENU_COUNT = 11;
 
 // ── Focus Timer Variables ───────────────────────────────────────────────────
 int flowMinutes = 0;
@@ -244,6 +246,14 @@ const unsigned long breathOutMs = 6000;
 uint8_t moodSelection = 0;
 unsigned long moodResponseStart = 0;
 
+// ── Virtual Pet State ───────────────────────────────────────────────────────
+uint8_t petLoveLevel = 3;       // 1 to 5 hearts
+uint8_t petActionIndex = 0;     // 0=Pet, 1=Feed, 2=Play, 3=Exit
+uint8_t petAnimState = 0;       // 0=idle, 1=petting, 2=eating, 3=playing
+unsigned long petAnimStart = 0;
+const char* const petActionLabels[] = {"Pet", "Feed", "Play", "Exit"};
+const uint8_t PET_ACTION_COUNT = 4;
+
 unsigned long bootStartTime = 0;
 uint16_t rngState = 0;
 
@@ -253,6 +263,7 @@ uint16_t rngState = 0;
 #define EEPROM_FLOW_ADDR   2     // 4 bytes
 #define EEPROM_GREET_ADDR  6     // 1 byte
 #define EEPROM_REMIND_ADDR 7     // 1 byte
+#define EEPROM_PET_ADDR    8     // 1 byte (petLoveLevel: 1-5)
 #define EEPROM_MAGIC_A     0xAC
 #define EEPROM_MAGIC_B     0xE1
 
@@ -276,6 +287,7 @@ void handleDecisionSpin(unsigned long now);
 void drawHeart(int cx, int cy, int size);
 void drawSleepyFace();
 void drawMoodFace(uint8_t mood, int cx, int cy, int r);
+void drawPet(int cx, int cy, uint8_t animState, int bounceY);
 uint16_t cheapRandom(uint16_t maxVal);
 void saveSettings();
 void loadSettings();
@@ -287,6 +299,7 @@ void renderTimerDown();
 void renderPomoSelect(bool isFocus);
 void renderPomoRunning(bool isFocus);
 void renderLoveNote();
+void renderPet();
 void renderCompliment();
 void renderDecision();
 void renderBreathSelect();
@@ -387,6 +400,12 @@ void loop() {
     updateDisplay();
   }
 
+  // Auto-dismiss pet interaction animation back to idle stance
+  if (currentState == PET_VIEW && petAnimState != 0 && (now - petAnimStart > 2200)) {
+    petAnimState = 0;
+    updateDisplay();
+  }
+
   // Inputs and background handlers
   handleRotaryInput();
   handleButtonPresses(now);
@@ -408,6 +427,8 @@ void loadSettings() {
     greetIntervalIdx = EEPROM.read(EEPROM_GREET_ADDR);
     if (greetIntervalIdx >= GREET_OPTION_COUNT) greetIntervalIdx = 2;
     remindersEnabled = EEPROM.read(EEPROM_REMIND_ADDR) != 0;
+    petLoveLevel = EEPROM.read(EEPROM_PET_ADDR);
+    if (petLoveLevel > 5 || petLoveLevel == 0) petLoveLevel = 3;
     Serial.println(F("Settings loaded from EEPROM."));
   } else {
     Serial.println(F("Using default settings."));
@@ -423,6 +444,7 @@ void saveSettings() {
   EEPROM.write(EEPROM_FLOW_ADDR + 3, (flowMinutes >> 24) & 0xFF);
   EEPROM.write(EEPROM_GREET_ADDR, greetIntervalIdx);
   EEPROM.write(EEPROM_REMIND_ADDR, remindersEnabled ? 1 : 0);
+  EEPROM.write(EEPROM_PET_ADDR, petLoveLevel);
   EEPROM.commit();
   Serial.println(F("Settings saved to EEPROM."));
 }
@@ -557,6 +579,74 @@ void drawMoodFace(uint8_t mood, int cx, int cy, int r) {
   }
 }
 
+void drawPet(int cx, int cy, uint8_t animState, int bounceY) {
+  int y = cy + bounceY;
+
+  // Body: Chubby round white creature
+  display.fillCircle(cx, y, 13, WHITE);
+
+  // Cute ears
+  display.fillTriangle(cx - 9, y - 6, cx - 6, y - 18, cx - 3, y - 6, WHITE);
+  display.fillTriangle(cx + 3, y - 6, cx + 6, y - 18, cx + 9, y - 6, WHITE);
+  // Inner ear indent
+  display.drawLine(cx - 6, y - 7, cx - 6, y - 14, BLACK);
+  display.drawLine(cx + 6, y - 7, cx + 6, y - 14, BLACK);
+
+  // Little paws
+  display.fillCircle(cx - 8, y + 11, 2, WHITE);
+  display.fillCircle(cx + 8, y + 11, 2, WHITE);
+
+  if (animState == 0) {
+    // Idle / Happy: cute eyes ( • ◡ • )
+    display.fillCircle(cx - 4, y - 2, 1, BLACK);
+    display.fillCircle(cx + 4, y - 2, 1, BLACK);
+    // Smile
+    display.drawPixel(cx - 2, y + 3, BLACK);
+    display.drawPixel(cx - 1, y + 4, BLACK);
+    display.drawPixel(cx,     y + 4, BLACK);
+    display.drawPixel(cx + 1, y + 4, BLACK);
+    display.drawPixel(cx + 2, y + 3, BLACK);
+  } else if (animState == 1) {
+    // Petting: Joyful squinting eyes ( > ◡ < ) + blushing + hearts!
+    display.drawLine(cx - 6, y - 3, cx - 4, y - 1, BLACK);
+    display.drawLine(cx - 4, y - 1, cx - 2, y - 3, BLACK);
+    display.drawLine(cx + 2, y - 3, cx + 4, y - 1, BLACK);
+    display.drawLine(cx + 4, y - 1, cx + 6, y - 3, BLACK);
+    display.fillCircle(cx, y + 3, 2, BLACK);
+    drawHeart(cx - 18, y - 10, 4);
+    drawHeart(cx + 18, y - 10, 4);
+    drawHeart(cx, y - 20, 5);
+  } else if (animState == 2) {
+    // Eating: Nom mouth ( ^ o ^ ) + treat
+    display.drawLine(cx - 5, y - 2, cx - 2, y - 2, BLACK);
+    display.drawLine(cx + 2, y - 2, cx + 5, y - 2, BLACK);
+    display.fillCircle(cx, y + 3, 3, BLACK);
+    display.fillCircle(cx - 14, y + 2, 3, WHITE);
+    display.drawPixel(cx - 14, y + 2, BLACK);
+    display.setTextSize(1);
+    display.setCursor(cx + 15, y - 8);
+    display.print(F("Yum!"));
+  } else if (animState == 3) {
+    // Playing: Winking sparkle eyes + stars
+    display.drawLine(cx - 5, y - 2, cx - 2, y - 2, BLACK);
+    display.fillCircle(cx + 4, y - 2, 1, BLACK);
+    display.drawLine(cx - 3, y + 2, cx + 3, y + 2, BLACK);
+    display.drawPixel(cx, y + 4, BLACK);
+    display.drawPixel(cx - 18, y - 6, WHITE);
+    display.drawPixel(cx - 17, y - 7, WHITE);
+    display.drawPixel(cx + 18, y - 6, WHITE);
+    display.drawPixel(cx + 17, y - 7, WHITE);
+  } else if (animState == 4) {
+    // Sleeping (in IDLE): ( - . - )
+    display.drawLine(cx - 5, y, cx - 2, y, BLACK);
+    display.drawLine(cx + 2, y, cx + 5, y, BLACK);
+    display.drawPixel(cx, y + 3, BLACK);
+    display.setTextSize(1);
+    display.setCursor(cx + 14, y - 10);
+    display.print(F("zZ"));
+  }
+}
+
 // ============================================================================
 //  MAIN DISPLAY DISPATCHER
 // ============================================================================
@@ -592,6 +682,9 @@ void updateDisplay() {
       break;
     case LOVE_NOTE_DISPLAY:
       renderLoveNote();
+      break;
+    case PET_VIEW:
+      renderPet();
       break;
     case COMPLIMENT_ROULETTE:
     case COMPLIMENT_RESULT:
@@ -672,10 +765,62 @@ void renderMenu() {
 // ── Render: Idle ────────────────────────────────────────────────────────────
 void renderIdle() {
   display.setTextSize(1);
-  display.setCursor(26, 4);
+  display.setCursor(18, 4);
   display.print(DEVICE_NAME);
-  display.print(F(" sleeping"));
-  drawSleepyFace();
+  display.print(F(" is sleeping"));
+  drawPet(64, 38, 4, 0);
+}
+
+// ── Render: Virtual Pet ─────────────────────────────────────────────────────
+void renderPet() {
+  // Yellow zone: Pet name & Love level
+  display.setTextSize(1);
+  display.setCursor(0, 4);
+  display.print(DEVICE_NAME);
+
+  display.setCursor(56, 4);
+  display.print(F("Love:"));
+  for (uint8_t i = 0; i < 5; i++) {
+    if (i < petLoveLevel) {
+      drawHeart(90 + i * 8, 7, 3);
+    } else {
+      display.drawPixel(90 + i * 8, 7, WHITE);
+    }
+  }
+
+  int bounceY = 0;
+  if (petAnimState == 3) {
+    bounceY = (millis() / 150) % 2 == 0 ? -4 : 0;
+  } else {
+    bounceY = (millis() / 700) % 2 == 0 ? 0 : 1;
+  }
+
+  drawPet(64, 33, petAnimState, bounceY);
+
+  if (petAnimState == 1) {
+    display.setTextSize(1);
+    display.setCursor(38, 55);
+    display.print(F("<3 Loved! <3"));
+  } else if (petAnimState == 2) {
+    display.setTextSize(1);
+    display.setCursor(34, 55);
+    display.print(F("* Nom nom! *"));
+  } else if (petAnimState == 3) {
+    display.setTextSize(1);
+    display.setCursor(40, 55);
+    display.print(F("Wheee! :D"));
+  } else {
+    const int tabX[] = {8, 38, 72, 102};
+    const int tabW[] = {18, 24, 24, 24};
+    display.setTextSize(1);
+    for (uint8_t i = 0; i < PET_ACTION_COUNT; i++) {
+      display.setCursor(tabX[i], 55);
+      display.print(petActionLabels[i]);
+      if (i == petActionIndex) {
+        display.drawLine(tabX[i], 63, tabX[i] + tabW[i], 63, WHITE);
+      }
+    }
+  }
 }
 
 // ── Render: Timer Up ────────────────────────────────────────────────────────
@@ -1143,6 +1288,13 @@ void handleRotaryInput() {
       updateDisplay();
       break;
 
+    case PET_VIEW:
+      if (petAnimState == 0) {
+        petActionIndex = (petActionIndex + rotation + PET_ACTION_COUNT) % PET_ACTION_COUNT;
+        updateDisplay();
+      }
+      break;
+
     case COMPLIMENT_ROULETTE:
       if (!rouletteSpinning) {
         rouletteSpinning = true;
@@ -1195,6 +1347,33 @@ void handleButtonPresses(unsigned long now) {
     case LOVE_NOTE_DISPLAY:
       currentState = MENU;
       break;
+
+    case PET_VIEW:
+      if (petAnimState != 0) {
+        petAnimState = 0;
+        updateDisplay();
+        return;
+      }
+      if (petActionIndex == 0) {        // Pet
+        petAnimState = 1;
+        petAnimStart = now;
+        if (petLoveLevel < 5) petLoveLevel++;
+        saveSettings();
+      } else if (petActionIndex == 1) { // Feed
+        petAnimState = 2;
+        petAnimStart = now;
+        if (petLoveLevel < 5) petLoveLevel++;
+        saveSettings();
+      } else if (petActionIndex == 2) { // Play
+        petAnimState = 3;
+        petAnimStart = now;
+        if (petLoveLevel < 5) petLoveLevel++;
+        saveSettings();
+      } else if (petActionIndex == 3) { // Exit
+        currentState = MENU;
+      }
+      updateDisplay();
+      return;
 
     case COMPLIMENT_ROULETTE:
       if (!rouletteSpinning) {
@@ -1295,52 +1474,58 @@ void handleMenuSelection(unsigned long now) {
       currentState = LOVE_NOTE_DISPLAY;
       break;
 
-    case 1:  // Spin! — Compliment roulette
+    case 1:  // Pet — Virtual Pet!
+      currentState = PET_VIEW;
+      petActionIndex = 0;
+      petAnimState = 0;
+      break;
+
+    case 2:  // Spin! — Compliment roulette
       rouletteSpinning = false;
       rouletteIndex = 0;
       currentState = COMPLIMENT_ROULETTE;
       break;
 
-    case 2:  // Decide — Decision maker
+    case 3:  // Decide — Decision maker
       currentState = DECISION_ORACLE;
       decisionAnimStart = now;
       decisionIndex = 0;
       break;
 
-    case 3:  // Breathe — Breathing exercise
+    case 4:  // Breathe — Breathing exercise
       breathCycles = 3;
       currentState = BREATHING_SELECT;
       break;
 
-    case 4:  // Mood — Mood check-in
+    case 5:  // Mood — Mood check-in
       moodSelection = 0;
       currentState = MOOD_SELECT;
       break;
 
-    case 5:  // Wake — Auto-wake greeting interval
+    case 6:  // Wake — Auto-wake greeting interval
       currentState = GREET_SELECT;
       break;
 
-    case 6:  // UP — Count up focus timer
+    case 7:  // UP — Count up focus timer
       currentState = COUNTING_UP;
       elapsedMinutes = 0;
       isCounting = true;
       previousMillis = now;
       break;
 
-    case 7:  // DOWN — Countdown focus timer
+    case 8:  // DOWN — Countdown focus timer
       currentState = SELECTING_DOWN_DURATION;
       countdownValue = 20;
       break;
 
-    case 8:  // POMO — Pomodoro focus timer
+    case 9:  // POMO — Pomodoro focus timer
       currentState = SELECTING_POMO_FOCUS;
       pomodoroFocusMinutes = 25;
       pomodoroRestMinutes = 5;
       countdownValue = pomodoroFocusMinutes;
       break;
 
-    case 9:  // Reset — Reset total focus minutes
+    case 10: // Reset — Reset total focus minutes
       flowMinutes = 0;
       saveSettings();
       break;
@@ -1426,7 +1611,8 @@ void handleInactivity(unsigned long now) {
   bool mayIdle = (currentState == MENU || currentState == SELECTING_DOWN_DURATION ||
                   currentState == SELECTING_POMO_FOCUS || currentState == SELECTING_POMO_REST ||
                   currentState == LOVE_NOTE_DISPLAY || currentState == MOOD_SELECT ||
-                  currentState == BREATHING_SELECT || currentState == GREET_SELECT);
+                  currentState == BREATHING_SELECT || currentState == GREET_SELECT ||
+                  currentState == PET_VIEW);
 
   if (mayIdle && (now - lastActivityTime > inactivityLimit)) {
     if (currentState != IDLE) {

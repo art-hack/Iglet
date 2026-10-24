@@ -11,15 +11,16 @@
 **Iglet** transforms the minimalist 3D-printed focus partner into an adorable, thoughtful desk companion gift for your girlfriend. It preserves the original focus tools (UP timer, DOWN timer, Pomodoro sessions, and flow minutes tracking) while adding **7 sweet, interactive companion features**:
 
 1. 💌 **Love Notes (`Notes`)**: 20 personal notes that she can browse with the rotary dial (previous/next note) or read on auto-wake.
-2. 🎰 **Compliment Roulette (`Spin!`)**: Spin the dial or click to roll a slot-machine-style compliment with deceleration and sparkle hearts.
-3. 🔮 **Decision Maker (`Decide`)**: Magic 8-Ball decider for dates, food, or silly dilemmas ("Should we get bubble tea?"). Rapid animated thinking then reveals an answer.
-4. 🫁 **Calm Breathing Exercise (`Breathe`)**: 4-2-6 calming breathing session with a smooth pulsing circle animation. Configurable cycles (1 to 20).
-5. 😊 **Mood Check-in (`Mood`)**: Rotate through 5 cute pixel faces (Happy, Okay, Sad, Angry, Love) to receive a warm, tailored comforting message.
-6. ⏰ **Auto-Wake Greeting (`Wake`)**: Configurable interval (`Off`, `30m`, `1 hr`, `2 hr`, `4 hr`) that wakes up the screen, shows a random love note, and sleeps again. Persists in EEPROM!
-7. 💧 **Gentle Reminders**: Periodic reminders every 45 min ("Drink water!", "Stretch break!", "Deep breath in", "You are amazing <3", "Look up & blink", "Stand up & shake it!").
-8. 💖 **Cute Boot Animation**: Shows `"Hi [Her Name]!"` with a beating heart animation every time it turns on.
-9. 💤 **Sleepy Idle Face**: Shows `(-_-)zzZ` when inactive for 2 minutes, then powers down OLED after 30 minutes to save power and prevent burn-in.
-10. ⏱️ **Focus Partner Timers (`UP`, `DOWN`, `POMO`, `Reset`)**: Original count-up stopwatch, countdown timer with rotary duration selection, Pomodoro focus/rest cycles, and total flow minutes tracking saved to EEPROM.
+2. 🐾 **Virtual Pet (`Pet`)**: A cute animated desktop creature! Choose between **`Pet`** (joyful wiggles + floating hearts), **`Feed`** (nom nom mouth + treat), **`Play`** (hopping + sparkles), and **`Exit`**. Tracks a 5-heart love level in EEPROM!
+3. 🎰 **Compliment Roulette (`Spin!`)**: Spin the dial or click to roll a slot-machine-style compliment with deceleration and sparkle hearts.
+4. 🔮 **Decision Maker (`Decide`)**: Magic 8-Ball decider for dates, food, or silly dilemmas ("Should we get bubble tea?"). Rapid animated thinking then reveals an answer.
+5. 🫁 **Calm Breathing Exercise (`Breathe`)**: 4-2-6 calming breathing session with a smooth pulsing circle animation. Configurable cycles (1 to 20).
+6. 😊 **Mood Check-in (`Mood`)**: Rotate through 5 cute pixel faces (Happy, Okay, Sad, Angry, Love) to receive a warm, tailored comforting message.
+7. ⏰ **Auto-Wake Greeting (`Wake`)**: Configurable interval (`Off`, `30m`, `1 hr`, `2 hr`, `4 hr`) that wakes up the screen, shows a random love note, and sleeps again. Persists in EEPROM!
+8. 💧 **Gentle Reminders**: Periodic reminders every 45 min ("Drink water!", "Stretch break!", "Deep breath in", "You are amazing <3", "Look up & blink", "Stand up & shake it!").
+9. 💖 **Cute Boot Animation**: Shows `"Hi [Her Name]!"` with a beating heart animation every time it turns on.
+10. 💤 **Sleepy Pet Idle**: When inactive for 2 minutes, your pet curls up asleep `(-.-)zzZ` on screen! Displays turns off after 30 minutes to conserve power.
+11. ⏱️ **Focus Partner Timers (`UP`, `DOWN`, `POMO`, `Reset`)**: Original count-up stopwatch, countdown timer with rotary duration selection, Pomodoro focus/rest cycles, and total flow minutes tracking saved to EEPROM.
 
 ---
 
@@ -137,10 +138,11 @@ const char* const oracleAnswers[] = {
 
 | Action | Control | Result |
 | :--- | :--- | :--- |
-| **Navigate Menu** | Rotate Dial | Cycles through: `Notes` → `Spin!` → `Decide` → `Breathe` → `Mood` → `Wake` → `UP` → `DOWN` → `POMO` → `Reset` |
+| **Navigate Menu** | Rotate Dial | Cycles through: `Notes` → `Pet` → `Spin!` → `Decide` → `Breathe` → `Mood` → `Wake` → `UP` → `DOWN` → `POMO` → `Reset` |
 | **Select / Enter** | Click Dial | Opens selected feature |
 | **Love Notes** | Rotate in `Notes` | Browses through all 20 notes (`1/20`, `2/20`...) |
 | **Exit Note** | Click in `Notes` | Returns to main menu |
+| **Virtual Pet** | Rotate in `Pet` | Select `Pet`, `Feed`, `Play`, or `Exit`; Click to interact & raise Love Level |
 | **Spin Roulette** | Rotate or Click in `Spin!` | Triggers spin animation, reveals compliment |
 | **Ask Decider** | Click in `Decide` | Plays thinking animation (`?`, `!`, `*`) and reveals answer |
 | **Breathing** | Rotate in `Breathe` | Sets cycles (1 to 20), Click starts 4-2-6 breathing |
