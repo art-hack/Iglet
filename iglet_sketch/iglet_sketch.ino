@@ -148,7 +148,6 @@ bool telegramInitialized = false;
 
 // ── Hardware Interrupt Flags ────────────────────────────────────────────────
 volatile int rotaryDelta = 0;
-volatile bool buttonWasClicked = false;
 
 // ============================================================================
 //  WEB SERVER & NETWORKING
@@ -234,13 +233,13 @@ unsigned long previousMillis = 0;
 // ── Input Handling & Debounce ───────────────────────────────────────────────
 unsigned long lastActivityTime = 0;
 unsigned long buttonDebounceTime = 0;
-const unsigned long buttonDebounceDelay = 400;
+const unsigned long buttonDebounceDelay = 350;
 unsigned long buttonIgnoreUntil = 0;
 unsigned long lastRotaryTime = 0;
 const unsigned long rotaryDebounceDelay = 120;
 
 // ── Inactivity & Sleep ──────────────────────────────────────────────────────
-const unsigned long inactivityLimit = 90UL * 1000UL;       // 90s to idle desk clock
+const unsigned long inactivityLimit = 45UL * 1000UL;       // 45s to idle desk clock
 const unsigned long displayOffTimeLimit = 30UL * 60000UL; // 30 min to display off
 unsigned long idleStartTime = 0;
 bool displayOff = false;
@@ -400,7 +399,6 @@ void setup() {
 
   attachInterrupt(digitalPinToInterrupt(CLK), handleEncoderInterrupt, CHANGE);
   attachInterrupt(digitalPinToInterrupt(DT),  handleEncoderInterrupt, CHANGE);
-  attachInterrupt(digitalPinToInterrupt(SW),  handleButtonInterrupt, FALLING);
 
   Serial.begin(9600);
   Serial.println(F("\nStarting Iglet..."));
@@ -1596,11 +1594,22 @@ void renderIdle() {
     printCentered(F("(-.-)zzZ"), 52, 1);
     drawHeart(100, 55, 3);
   } else {
+    // Offline / Pre-sync Desk Clock fallback
     display.setTextSize(1);
-    display.setCursor(16, 4);
+    display.setCursor(14, 4);
     display.print(DEVICE_NAME);
-    display.print(F(" is sleeping"));
-    drawPet(64, 38, 4, 0);
+    display.print(F(" (Desk Clock)"));
+
+    unsigned long sec = millis() / 1000;
+    unsigned int hrs = (sec / 3600) % 24;
+    unsigned int mins = (sec / 60) % 60;
+    char upBuf[10];
+    sprintf(upBuf, "%02u:%02u", hrs, mins);
+    printCentered(upBuf, 20, 3);
+
+    drawHeart(28, 55, 3);
+    printCentered(F("(-.-)zzZ"), 52, 1);
+    drawHeart(100, 55, 3);
   }
 }
 
@@ -2145,15 +2154,6 @@ ICACHE_RAM_ATTR void handleEncoderInterrupt() {
   }
 }
 
-ICACHE_RAM_ATTR void handleButtonInterrupt() {
-  static unsigned long lastPressTime = 0;
-  unsigned long now = millis();
-  if (now - lastPressTime > 300) {
-    buttonWasClicked = true;
-    lastPressTime = now;
-  }
-}
-
 int getRotation() {
   if (rotaryDelta != 0) {
     noInterrupts();
@@ -2168,17 +2168,9 @@ int getRotation() {
 bool buttonPressed(unsigned long now) {
   if (buttonIgnoreUntil != 0) {
     if ((long)(now - buttonIgnoreUntil) < 0) {
-      buttonWasClicked = false;
       return false;
     }
     buttonIgnoreUntil = 0;
-  }
-
-  if (buttonWasClicked) {
-    buttonWasClicked = false;
-    buttonDebounceTime = now;
-    lastActivityTime = now;
-    return true;
   }
 
   static int lastButtonReading = HIGH;
@@ -2314,6 +2306,7 @@ void handleButtonPresses(unsigned long now) {
         display.ssd1306_command(SSD1306_DISPLAYON);
         displayOff = false;
       }
+      updateDisplay();
       break;
 
     case WIFI_PORTAL_VIEW:
