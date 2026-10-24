@@ -1,0 +1,19 @@
+# Private Iglet personalization (keep your girlfriend's name & private notes secret!)
+iglet_sketch/config.h
+config.h
+
+# Arduino / IDE build outputs & temporary files
+build/
+*.hex
+*.bin
+*.elf
+*.o
+*.d
+
+# OS & Editor files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+*~

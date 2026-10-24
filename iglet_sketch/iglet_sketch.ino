@@ -37,78 +37,85 @@ Adafruit_SSD1306 display(128, 64, &Wire, -1);
 #define SW     D4
 
 // ============================================================================
-//  PERSONALISE THESE FOR YOUR GIRLFRIEND!
+//  PERSONALIZATION (Private config or Public defaults)
 // ============================================================================
-#define GF_NAME       "Cutie"          // Her name or nickname (max ~10 chars)
-#define DEVICE_NAME   "Iglet"          // Name of the device
+// If "config.h" exists, it loads your private name & personal notes.
+// "config.h" is in .gitignore, keeping your girlfriend's real name 100% private!
+// See "config.example.h" to create your own "config.h".
+#if __has_include("config.h")
+  #include "config.h"
+#else
+  #define GF_NAME       "Cutie"          // Her name or nickname (max ~10 chars)
+  #define DEVICE_NAME   "Iglet"          // Name of the device
 
-// ── Love Notes: 20 notes she can browse, also shown during auto-wake ────────
-// Stored as triplets: line1 (yellow zone), line2 (blue zone), separator "---"
-const char* const loveNotes[] = {
-  "You are my",    "sunshine!",    "---",
-  "I love you",    "3000 <3",      "---",
-  "You make me",   "so happy!",    "---",
-  "Thinking of",   "you always",   "---",
-  "You're the",    "best thing",   "---",
-  "Smile! You",    "look cute :)", "---",
-  "You got this",  "I believe!",   "---",
-  "Miss you",      "right now <3", "---",
-  "You deserve",   "all the love", "---",
-  "My favorite",   "person ever!", "---",
-  "Sending you",   "a big hug!",   "---",
-  "Dream big,",    "my love <3",   "---",
-  "You are so",    "so special!",  "---",
-  "I'm lucky",     "to have you",  "---",
-  "You light up",  "my world!",    "---",
-  "Stay amazing",  "beautiful!",   "---",
-  "I adore you",   "endlessly <3", "---",
-  "Be kind to",    "yourself <3",  "---",
-  "You make my",   "heart sing!",  "---",
-  "Forever and",   "always <3",    "---"
-};
-const uint8_t LOVE_NOTE_COUNT = 20;
+  // ── Love Notes: 20 notes she can browse, also shown during auto-wake ────────
+  // Stored as triplets: line1 (yellow zone), line2 (blue zone), separator "---"
+  const char* const loveNotes[] = {
+    "You are my",    "sunshine!",    "---",
+    "I love you",    "3000 <3",      "---",
+    "You make me",   "so happy!",    "---",
+    "Thinking of",   "you always",   "---",
+    "You're the",    "best thing",   "---",
+    "Smile! You",    "look cute :)", "---",
+    "You got this",  "I believe!",   "---",
+    "Miss you",      "right now <3", "---",
+    "You deserve",   "all the love", "---",
+    "My favorite",   "person ever!", "---",
+    "Sending you",   "a big hug!",   "---",
+    "Dream big,",    "my love <3",   "---",
+    "You are so",    "so special!",  "---",
+    "I'm lucky",     "to have you",  "---",
+    "You light up",  "my world!",    "---",
+    "Stay amazing",  "beautiful!",   "---",
+    "I adore you",   "endlessly <3", "---",
+    "Be kind to",    "yourself <3",  "---",
+    "You make my",   "heart sing!",  "---",
+    "Forever and",   "always <3",    "---"
+  };
+  const uint8_t LOVE_NOTE_COUNT = 20;
 
-// ── Compliments for the Roulette ────────────────────────────────────────────
-const char* const compliments[] = {
-  "Amazing!",
-  "Stunning!",
-  "10/10 !!",
-  "Gorgeous!",
-  "Brilliant",
-  "Adorable!",
-  "Perfect!",
-  "Kind soul",
-  "So smart!",
-  "My queen!",
-  "So brave!",
-  "A gem!",
-  "Radiant!",
-  "One & only",
-  "Magical!",
-  "Precious!"
-};
-const uint8_t COMPLIMENT_COUNT = 16;
+  // ── Compliments for the Roulette ────────────────────────────────────────────
+  const char* const compliments[] = {
+    "Amazing!",
+    "Stunning!",
+    "10/10 !!",
+    "Gorgeous!",
+    "Brilliant",
+    "Adorable!",
+    "Perfect!",
+    "Kind soul",
+    "So smart!",
+    "My queen!",
+    "So brave!",
+    "A gem!",
+    "Radiant!",
+    "One & only",
+    "Magical!",
+    "Precious!"
+  };
+  const uint8_t COMPLIMENT_COUNT = 16;
 
-// ── Decision Maker (Magic 8-Ball / Cute decider) ────────────────────────────
-const char* const oracleAnswers[] = {
-  "Yes!",
-  "Nope!",
-  "Maybe...",
-  "Do it!",
-  "Hmm, no",
-  "100%!",
-  "Ask later",
-  "Oh yes!!",
-  "Nah :P",
-  "Go for it",
-  "Not today",
-  "Totally!",
-  "Why not?",
-  "Bad idea",
-  "Trust me!",
-  "Meh..."
-};
-const uint8_t ORACLE_COUNT = 16;
+  // ── Decision Maker (Magic 8-Ball / Cute decider) ────────────────────────────
+  const char* const oracleAnswers[] = {
+    "Yes!",
+    "Nope!",
+    "Maybe...",
+    "Do it!",
+    "Hmm, no",
+    "100%!",
+    "Ask later",
+    "Oh yes!!",
+    "Nah :P",
+    "Go for it",
+    "Not today",
+    "Totally!",
+    "Why not?",
+    "Bad idea",
+    "Trust me!",
+    "Meh..."
+  };
+  const uint8_t ORACLE_COUNT = 16;
+#endif
 
 // ── Gentle Reminders ────────────────────────────────────────────────────────
 // Stored as triplets: line1 (yellow zone), line2 (blue zone), separator "---"

@@ -78,13 +78,18 @@ In Arduino IDE, go to `Tools` → `Manage Libraries...` and install:
 
 ---
 
-## 🎨 How to Personalize for Your Girlfriend
+## 🎨 How to Personalize for Your Girlfriend (100% Private!)
 
-Open `iglet_sketch/iglet_sketch.ino` and customize the top sections:
+To protect your girlfriend's real name and your private messages from ever being accidentally uploaded to GitHub, Iglet uses a **gitignored private config file**:
+
+1. In the `iglet_sketch/` folder, copy **`config.example.h`** and name the copy **`config.h`**:
+   - `config.h` is automatically ignored by Git (`.gitignore`), so **`git push` can NEVER upload it!**
+   - The sketch will automatically detect and load `config.h`. If `config.h` doesn't exist, it safely falls back to cute generic defaults.
+2. Open `iglet_sketch/config.h` and customize:
 
 ### 1. Her Name & Device Name
 ```cpp
-#define GF_NAME       "Cutie"          // Her name or nickname (e.g. "Maya", "Babe", "Emma")
+#define GF_NAME       "Cutie"          // Her real name or nickname (e.g. "Maya", "Babe", "Emma")
 #define DEVICE_NAME   "Iglet"          // Name of her little companion
 ```
 
