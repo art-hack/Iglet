@@ -13,6 +13,16 @@
 #define GF_NAME       "Cutie"          // Her real name or nickname (e.g. "Maya", "Emma", "Babe")
 #define DEVICE_NAME   "Iglet"          // Name of her little companion
 
+// ── Optional Wi-Fi & Special Dates ──────────────────────────────────────────
+// Tip: You can also set these wirelessly from your phone via the web portal!
+#define WIFI_SSID           ""         // Your home Wi-Fi network name
+#define WIFI_PASS           ""         // Your home Wi-Fi password
+#define TIMEZONE_OFFSET_HRS 5.5        // e.g. 5.5 for IST (+05:30), -5 for EST, 1 for CET
+#define ANNIVERSARY_MONTH   0          // Month (1-12, or 0 if not set yet)
+#define ANNIVERSARY_DAY     0          // Day (1-31)
+#define GF_BIRTHDAY_MONTH   0          // Month (1-12)
+#define GF_BIRTHDAY_DAY     0          // Day (1-31)
+
 // ── Love Notes: 20 personal messages ────────────────────────────────────────
 // Stored as triplets: line1 (yellow zone), line2 (blue zone), separator "---"
 // Tip: Keep line1 and line2 under ~10 characters each for large crisp text.

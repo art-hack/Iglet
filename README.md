@@ -1,10 +1,10 @@
 # Project IGOR & IGLET 🎀
 
 > 💖 **Looking for the Iglet Gift Firmware?**  
-> Check out the complete build and customization guide: **[IGLET_GUIDE.md](file:///d:/Work/Github/Iglet/IGLET_GUIDE.md)**  
-> Firmware source code: **[`iglet_sketch/iglet_sketch.ino`](file:///d:/Work/Github/Iglet/iglet_sketch/iglet_sketch.ino)** (for Wemos D1 Mini ESP8266)
+> Check out the complete build and customization guide: **[IGLET_GUIDE.md](IGLET_GUIDE.md)**  
+> Firmware source code: **[`iglet_sketch/iglet_sketch.ino`](iglet_sketch/iglet_sketch.ino)** (for Wemos D1 Mini ESP8266)  
 >
-> *Iglet adds Love Notes, Compliment Roulette, Decision Maker, Breathing Exercise, Mood Check-in, Auto-Wake Greetings, and Gentle Reminders to the original focus companion!*
+> *Iglet adds Love Notes, Virtual Pet, Special Date Countdowns, Wireless Phone Setup Portal, Live Desk Notes Sender, Compliment Roulette, Decision Maker, Breathing Exercise, Mood Check-in, Auto-Wake Greetings, and Gentle Reminders to the original focus companion!*
 
 ---
 

@@ -18,17 +18,21 @@
 //    - Encoder VCC:     3.3V
 //    - Encoder GND:     GND
 //
-//  Required Libraries (install via Arduino Library Manager):
-//    - Adafruit SSD1306 by Adafruit
-//    - Adafruit GFX Library by Adafruit
+//  Libraries (built-in to ESP8266 Core & Adafruit):
+//    - ESP8266WiFi, ESP8266WebServer, DNSServer, ESP8266mDNS, time.h
+//    - Adafruit SSD1306, Adafruit GFX, Wire, EEPROM
 // ============================================================================
 
+#include <ESP8266WiFi.h>
+#include <ESP8266WebServer.h>
+#include <DNSServer.h>
+#include <ESP8266mDNS.h>
+#include <time.h>
 #include <Wire.h>
 #include <Adafruit_SSD1306.h>
 #include <EEPROM.h>
 
 // ── Display ─────────────────────────────────────────────────────────────────
-// Pass -1 for reset pin since standard 4-pin I2C OLED has no dedicated reset.
 Adafruit_SSD1306 display(128, 64, &Wire, -1);
 
 // ── Rotary Encoder Pins ─────────────────────────────────────────────────────
@@ -39,17 +43,19 @@ Adafruit_SSD1306 display(128, 64, &Wire, -1);
 // ============================================================================
 //  PERSONALIZATION (Private config or Public defaults)
 // ============================================================================
-// If "config.h" exists, it loads your private name & personal notes.
-// "config.h" is in .gitignore, keeping your girlfriend's real name 100% private!
-// See "config.example.h" to create your own "config.h".
 #if __has_include("config.h")
   #include "config.h"
 #else
-  #define GF_NAME       "Cutie"          // Her name or nickname (max ~10 chars)
-  #define DEVICE_NAME   "Iglet"          // Name of the device
+  #define GF_NAME             "Cutie"
+  #define DEVICE_NAME         "Iglet"
+  #define WIFI_SSID           ""
+  #define WIFI_PASS           ""
+  #define TIMEZONE_OFFSET_HRS 5.5
+  #define ANNIVERSARY_MONTH   0
+  #define ANNIVERSARY_DAY     0
+  #define GF_BIRTHDAY_MONTH   0
+  #define GF_BIRTHDAY_DAY     0
 
-  // ── Love Notes: 20 notes she can browse, also shown during auto-wake ────────
-  // Stored as triplets: line1 (yellow zone), line2 (blue zone), separator "---"
   const char* const loveNotes[] = {
     "You are my",    "sunshine!",    "---",
     "I love you",    "3000 <3",      "---",
@@ -74,51 +80,24 @@ Adafruit_SSD1306 display(128, 64, &Wire, -1);
   };
   const uint8_t LOVE_NOTE_COUNT = 20;
 
-  // ── Compliments for the Roulette ────────────────────────────────────────────
   const char* const compliments[] = {
-    "Amazing!",
-    "Stunning!",
-    "10/10 !!",
-    "Gorgeous!",
-    "Brilliant",
-    "Adorable!",
-    "Perfect!",
-    "Kind soul",
-    "So smart!",
-    "My queen!",
-    "So brave!",
-    "A gem!",
-    "Radiant!",
-    "One & only",
-    "Magical!",
-    "Precious!"
+    "Amazing!", "Stunning!", "10/10 !!", "Gorgeous!",
+    "Brilliant", "Adorable!", "Perfect!", "Kind soul",
+    "So smart!", "My queen!", "So brave!", "A gem!",
+    "Radiant!", "One & only", "Magical!", "Precious!"
   };
   const uint8_t COMPLIMENT_COUNT = 16;
 
-  // ── Decision Maker (Magic 8-Ball / Cute decider) ────────────────────────────
   const char* const oracleAnswers[] = {
-    "Yes!",
-    "Nope!",
-    "Maybe...",
-    "Do it!",
-    "Hmm, no",
-    "100%!",
-    "Ask later",
-    "Oh yes!!",
-    "Nah :P",
-    "Go for it",
-    "Not today",
-    "Totally!",
-    "Why not?",
-    "Bad idea",
-    "Trust me!",
-    "Meh..."
+    "Yes!", "Nope!", "Maybe...", "Do it!",
+    "Hmm, no", "100%!", "Ask later", "Oh yes!!",
+    "Nah :P", "Go for it", "Not today", "Totally!",
+    "Why not?", "Bad idea", "Trust me!", "Meh..."
   };
   const uint8_t ORACLE_COUNT = 16;
 #endif
 
 // ── Gentle Reminders ────────────────────────────────────────────────────────
-// Stored as triplets: line1 (yellow zone), line2 (blue zone), separator "---"
 const char* const reminderMsgs[] = {
   "Drink",        "water! :)",    "---",
   "Stretch",      "break! <3",    "---",
@@ -141,13 +120,41 @@ const char* const moodResponses[][2] = {
 const uint8_t MOOD_COUNT = 5;
 
 // ============================================================================
+//  DYNAMIC CONFIGURATION (Stored in EEPROM, editable wirelessly via Phone!)
+// ============================================================================
+char cfgGfName[32]        = GF_NAME;
+char cfgWifiSSID[64]      = WIFI_SSID;
+char cfgWifiPass[64]      = WIFI_PASS;
+uint8_t cfgBdayMonth      = GF_BIRTHDAY_MONTH;
+uint8_t cfgBdayDay        = GF_BIRTHDAY_DAY;
+uint8_t cfgAnnivMonth     = ANNIVERSARY_MONTH;
+uint8_t cfgAnnivDay       = ANNIVERSARY_DAY;
+float cfgTzOffset         = TIMEZONE_OFFSET_HRS;
+
+// ============================================================================
+//  WEB SERVER & NETWORKING
+// ============================================================================
+ESP8266WebServer server(80);
+DNSServer dnsServer;
+const byte DNS_PORT = 53;
+bool apModeActive = false;
+bool wifiConnecting = false;
+unsigned long wifiConnectStart = 0;
+bool ntpConfigured = false;
+
+// ── Live Note from Phone ────────────────────────────────────────────────────
+char liveNoteLine1[24] = "";
+char liveNoteLine2[24] = "";
+unsigned long liveNoteStart = 0;
+
+// ============================================================================
 //  STATE MACHINE
 // ============================================================================
 enum State {
   BOOT_ANIM,
   MENU,
   IDLE,
-  // ── Original Focus Partner timer states ──
+  // ── Focus Partner Timers ──
   COUNTING_UP,
   COUNTING_DOWN,
   SELECTING_DOWN_DURATION,
@@ -155,9 +162,10 @@ enum State {
   SELECTING_POMO_REST,
   POMODORO_FOCUS,
   POMODORO_REST,
-  // ── Iglet Companion states ──
+  // ── Companion Features ──
   LOVE_NOTE_DISPLAY,
   PET_VIEW,
+  DAYS_VIEW,             // Couple's Countdown Timer & Live Clock
   COMPLIMENT_ROULETTE,
   COMPLIMENT_RESULT,
   DECISION_ORACLE,
@@ -166,27 +174,32 @@ enum State {
   BREATHING_EXERCISE,
   MOOD_SELECT,
   MOOD_RESPONSE,
+  WIFI_PORTAL_VIEW,      // Wi-Fi Status & Phone Setup Portal
   GREET_SELECT,
   REMINDER_DISPLAY,
-  GREETING_WAKEUP
+  GREETING_WAKEUP,
+  LIVE_NOTE_DISPLAY,     // Note sent live from phone!
+  CELEBRATION_DISPLAY    // Birthday or Anniversary celebration!
 };
 State currentState = BOOT_ANIM;
 
 // ── Main Menu ───────────────────────────────────────────────────────────────
 const char* const mainMenuItems[] = {
   "Notes",       // 0: Love notes
-  "Pet",         // 1: Virtual Pet (Tamagotchi-lite!)
-  "Spin!",       // 2: Compliment roulette
-  "Decide",      // 3: Decision maker
-  "Breathe",     // 4: Breathing exercise
-  "Mood",        // 5: Mood check-in
-  "Wake",        // 6: Auto-wake interval settings
-  "UP",          // 7: Count up focus timer
-  "DOWN",        // 8: Countdown focus timer
-  "POMO",        // 9: Pomodoro focus timer
-  "Reset"        // 10: Reset total flow minutes
+  "Pet",         // 1: Virtual Pet (Tamagotchi-lite)
+  "Days",        // 2: Event Countdowns (Anniversary, Birthday, Clock)
+  "Spin!",       // 3: Compliment roulette
+  "Decide",      // 4: Decision maker
+  "Breathe",     // 5: Breathing exercise
+  "Mood",        // 6: Mood check-in
+  "WiFi",        // 7: Wi-Fi status / Web Portal
+  "Wake",        // 8: Auto-wake greeting interval
+  "UP",          // 9: Count up focus timer
+  "DOWN",        // 10: Countdown focus timer
+  "POMO",        // 11: Pomodoro focus timer
+  "Reset"        // 12: Reset total flow minutes
 };
-const uint8_t MAIN_MENU_COUNT = 11;
+const uint8_t MAIN_MENU_COUNT = 13;
 
 // ── Focus Timer Variables ───────────────────────────────────────────────────
 int flowMinutes = 0;
@@ -202,12 +215,12 @@ unsigned long previousMillis = 0;
 // ── Input Handling & Debounce ───────────────────────────────────────────────
 unsigned long lastActivityTime = 0;
 unsigned long buttonDebounceTime = 0;
-const unsigned long buttonDebounceDelay = 400;   // Snappy, reliable button debounce
+const unsigned long buttonDebounceDelay = 400;
 unsigned long lastRotaryTime = 0;
-const unsigned long rotaryDebounceDelay = 120;   // Quadrature debounce
+const unsigned long rotaryDebounceDelay = 120;
 
 // ── Inactivity & Sleep ──────────────────────────────────────────────────────
-const unsigned long inactivityLimit = 2UL * 60000UL;      // 2 min to sleep face
+const unsigned long inactivityLimit = 2UL * 60000UL;      // 2 min to sleep
 const unsigned long displayOffTimeLimit = 30UL * 60000UL; // 30 min to display off
 unsigned long idleStartTime = 0;
 bool displayOff = false;
@@ -221,32 +234,14 @@ unsigned long lastGreetingTime = 0;
 
 // ── Gentle Reminder Settings ────────────────────────────────────────────────
 bool remindersEnabled = true;
-const unsigned long reminderIntervalMs = 45UL * 60000UL;  // Every 45 minutes
+const unsigned long reminderIntervalMs = 45UL * 60000UL;
 unsigned long lastReminderTime = 0;
 uint8_t currentReminderIndex = 0;
 
-// ── Feature Specific States ─────────────────────────────────────────────────
+// ── Feature States ──────────────────────────────────────────────────────────
 uint8_t currentNoteIndex = 0;
 
-uint8_t rouletteIndex = 0;
-unsigned long rouletteLastSpin = 0;
-bool rouletteSpinning = false;
-
-uint8_t decisionIndex = 0;
-unsigned long decisionAnimStart = 0;
-
-int breathCycles = 3;
-int breathCurrentCycle = 0;
-uint8_t breathPhase = 0;       // 0=in (4s), 1=hold (2s), 2=out (6s)
-unsigned long breathPhaseStart = 0;
-const unsigned long breathInMs = 4000;
-const unsigned long breathHoldMs = 2000;
-const unsigned long breathOutMs = 6000;
-
-uint8_t moodSelection = 0;
-unsigned long moodResponseStart = 0;
-
-// ── Virtual Pet State ───────────────────────────────────────────────────────
+// Pet
 uint8_t petLoveLevel = 3;       // 1 to 5 hearts
 uint8_t petActionIndex = 0;     // 0=Pet, 1=Feed, 2=Play, 3=Exit
 uint8_t petAnimState = 0;       // 0=idle, 1=petting, 2=eating, 3=playing
@@ -254,18 +249,56 @@ unsigned long petAnimStart = 0;
 const char* const petActionLabels[] = {"Pet", "Feed", "Play", "Exit"};
 const uint8_t PET_ACTION_COUNT = 4;
 
+// Days countdown view
+uint8_t daysSubIndex = 0;       // 0=Anniversary, 1=Birthday, 2=Clock
+
+// Compliment roulette
+uint8_t rouletteIndex = 0;
+unsigned long rouletteLastSpin = 0;
+bool rouletteSpinning = false;
+
+// Decision maker
+uint8_t decisionIndex = 0;
+unsigned long decisionAnimStart = 0;
+
+// Breathing
+int breathCycles = 3;
+int breathCurrentCycle = 0;
+uint8_t breathPhase = 0;
+unsigned long breathPhaseStart = 0;
+const unsigned long breathInMs = 4000;
+const unsigned long breathHoldMs = 2000;
+const unsigned long breathOutMs = 6000;
+
+// Mood
+uint8_t moodSelection = 0;
+unsigned long moodResponseStart = 0;
+
+// Boot
 unsigned long bootStartTime = 0;
 uint16_t rngState = 0;
 
-// ── EEPROM Non-Volatile Storage ─────────────────────────────────────────────
-#define EEPROM_SIZE        64
-#define EEPROM_MAGIC_ADDR  0     // 2 bytes: 0xAC, 0xE1
-#define EEPROM_FLOW_ADDR   2     // 4 bytes
+// Celebration type: 1=Birthday, 2=Anniversary
+uint8_t celebrationType = 0;
+unsigned long celebrationStart = 0;
+
+// ── EEPROM Memory Map ───────────────────────────────────────────────────────
+#define EEPROM_SIZE        512
+#define EEPROM_MAGIC_ADDR  0     // 2 bytes: 0xAC, 0xE3
+#define EEPROM_FLOW_ADDR   2     // 4 bytes: int32
 #define EEPROM_GREET_ADDR  6     // 1 byte
 #define EEPROM_REMIND_ADDR 7     // 1 byte
-#define EEPROM_PET_ADDR    8     // 1 byte (petLoveLevel: 1-5)
+#define EEPROM_PET_ADDR    8     // 1 byte
+#define EEPROM_BDAY_M_ADDR 9     // 1 byte
+#define EEPROM_BDAY_D_ADDR 10    // 1 byte
+#define EEPROM_ANN_M_ADDR  11    // 1 byte
+#define EEPROM_ANN_D_ADDR  12    // 1 byte
+#define EEPROM_TZ_ADDR     13    // 1 byte (signed int8_t: hours * 2)
+#define EEPROM_NAME_ADDR   16    // 32 bytes (char string)
+#define EEPROM_SSID_ADDR   48    // 64 bytes (char string)
+#define EEPROM_PASS_ADDR   112   // 64 bytes (char string)
 #define EEPROM_MAGIC_A     0xAC
-#define EEPROM_MAGIC_B     0xE1
+#define EEPROM_MAGIC_B     0xE3
 
 // ============================================================================
 //  FORWARD DECLARATIONS
@@ -285,13 +318,18 @@ void handleBreathingAnimation(unsigned long now);
 void handleRouletteSpin(unsigned long now);
 void handleDecisionSpin(unsigned long now);
 void drawHeart(int cx, int cy, int size);
-void drawSleepyFace();
-void drawMoodFace(uint8_t mood, int cx, int cy, int r);
 void drawPet(int cx, int cy, uint8_t animState, int bounceY);
+void drawCake(int cx, int cy);
 uint16_t cheapRandom(uint16_t maxVal);
 void saveSettings();
 void loadSettings();
 void bootAnimation();
+void startWiFiOrAP();
+void startAPMode();
+void checkDateCelebration();
+int  getDaysUntil(int targetMonth, int targetDay);
+bool isToday(int month, int day);
+void setupWebServer();
 void renderMenu();
 void renderIdle();
 void renderTimerUp();
@@ -300,14 +338,18 @@ void renderPomoSelect(bool isFocus);
 void renderPomoRunning(bool isFocus);
 void renderLoveNote();
 void renderPet();
+void renderDays();
 void renderCompliment();
 void renderDecision();
 void renderBreathSelect();
 void renderMoodSelect();
 void renderMoodResponse();
+void renderWiFiPortal();
 void renderGreetSelect();
 void renderReminder();
 void renderGreeting();
+void renderLiveNote();
+void renderCelebration();
 
 // ============================================================================
 //  SETUP
@@ -318,19 +360,18 @@ void setup() {
   pinMode(SW, INPUT_PULLUP);
 
   Serial.begin(9600);
-  Serial.println(F("Starting Iglet..."));
+  Serial.println(F("\nStarting Iglet..."));
 
   EEPROM.begin(EEPROM_SIZE);
 
   if (!display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) {
-    Serial.println(F("SSD1306 allocation failed. Check wiring/address (0x3C/0x3D)"));
+    Serial.println(F("SSD1306 allocation failed. Check wiring (0x3C/0x3D)"));
     for (;;);
   }
 
   display.clearDisplay();
   display.display();
 
-  // Seed the pseudo-random generator from analog noise
   rngState = (uint16_t)(analogRead(A0) ^ millis());
   if (rngState == 0) rngState = 0x1337;
 
@@ -342,6 +383,9 @@ void setup() {
   bootStartTime    = millis();
   currentState     = BOOT_ANIM;
 
+  // Start background Wi-Fi connection or setup AP
+  startWiFiOrAP();
+
   Serial.println(F("Iglet setup complete!"));
 }
 
@@ -351,17 +395,54 @@ void setup() {
 void loop() {
   unsigned long now = millis();
 
-  // Boot animation takes priority at power on
+  // Background network tasks
+  if (apModeActive) {
+    dnsServer.processNextRequest();
+  }
+  server.handleClient();
+  MDNS.update();
+
+  // Check background Wi-Fi connection
+  if (wifiConnecting) {
+    if (WiFi.status() == WL_CONNECTED) {
+      wifiConnecting = false;
+      Serial.print(F("WiFi connected! IP: "));
+      Serial.println(WiFi.localIP());
+
+      if (!ntpConfigured) {
+        configTime((long)(cfgTzOffset * 3600), 0, "pool.ntp.org", "time.nist.gov");
+        ntpConfigured = true;
+      }
+      MDNS.begin("iglet");
+      MDNS.addService("http", "tcp", 80);
+      setupWebServer();
+    } else if (now - wifiConnectStart > 12000) {
+      // Timeout connecting to home WiFi: drop into offline mode smoothly
+      wifiConnecting = false;
+      Serial.println(F("WiFi connection timeout, continuing offline."));
+    }
+  }
+
+  // Priority boot animation
   if (currentState == BOOT_ANIM) {
     bootAnimation();
     return;
   }
 
-  // Periodic events (only when device is in MENU or IDLE)
+  // Special birthday/anniversary celebration screen
+  if (currentState == CELEBRATION_DISPLAY) {
+    if (now - celebrationStart > 5000) {
+      currentState = MENU;
+      updateDisplay();
+    }
+    return;
+  }
+
+  // Periodic events (only in MENU or IDLE)
   handleAutoGreeting(now);
   handleReminders(now);
 
-  // Non-blocking animation states
+  // Non-blocking animations
   if (currentState == BREATHING_EXERCISE) {
     handleBreathingAnimation(now);
   }
@@ -372,6 +453,18 @@ void loop() {
 
   if (currentState == DECISION_ORACLE) {
     handleDecisionSpin(now);
+  }
+
+  // Auto-dismiss pet interaction animation
+  if (currentState == PET_VIEW && petAnimState != 0 && (now - petAnimStart > 2200)) {
+    petAnimState = 0;
+    updateDisplay();
+  }
+
+  // Auto-dismiss live note sent from phone
+  if (currentState == LIVE_NOTE_DISPLAY && (now - liveNoteStart > 15000)) {
+    currentState = MENU;
+    updateDisplay();
   }
 
   // Auto-dismiss timeouts
@@ -400,17 +493,193 @@ void loop() {
     updateDisplay();
   }
 
-  // Auto-dismiss pet interaction animation back to idle stance
-  if (currentState == PET_VIEW && petAnimState != 0 && (now - petAnimStart > 2200)) {
-    petAnimState = 0;
-    updateDisplay();
-  }
-
   // Inputs and background handlers
   handleRotaryInput();
   handleButtonPresses(now);
   handleCounting(now);
   handleInactivity(now);
+}
+
+// ============================================================================
+//  WIFI & NETWORKING INITIALIZATION
+// ============================================================================
+void startWiFiOrAP() {
+  if (strlen(cfgWifiSSID) > 0) {
+    // We have saved Wi-Fi credentials: connect in background!
+    WiFi.mode(WIFI_STA);
+    WiFi.begin(cfgWifiSSID, cfgWifiPass);
+    wifiConnecting = true;
+    wifiConnectStart = millis();
+    apModeActive = false;
+    Serial.print(F("Connecting to WiFi: "));
+    Serial.println(cfgWifiSSID);
+  } else {
+    // No Wi-Fi saved yet: start setup hotspot!
+    startAPMode();
+  }
+}
+
+void startAPMode() {
+  WiFi.mode(WIFI_AP);
+  WiFi.softAP("Iglet-Setup");
+  apModeActive = true;
+  wifiConnecting = false;
+
+  // Captive portal DNS redirect
+  dnsServer.start(DNS_PORT, "*", WiFi.softAPIP());
+
+  Serial.println(F("Started AP mode: 'Iglet-Setup' (192.168.4.1)"));
+  setupWebServer();
+}
+
+// ============================================================================
+//  WEB SERVER (Phone Setup Portal & Live Note Dashboard)
+// ============================================================================
+void handleRoot() {
+  String html = F("<!DOCTYPE html><html><head><meta charset='UTF-8'>"
+                  "<meta name='viewport' content='width=device-width,initial-scale=1'>"
+                  "<title>Iglet Companion</title>"
+                  "<style>"
+                  "body{font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif;"
+                  "background:linear-gradient(135deg,#ff9a9e,#fecfef);min-height:100vh;margin:0;padding:16px;box-sizing:border-box;color:#333;}"
+                  ".card{background:rgba(255,255,255,0.95);border-radius:20px;padding:22px;max-width:420px;margin:12px auto;box-shadow:0 10px 25px rgba(0,0,0,0.1);}"
+                  "h1{color:#e63946;margin:0 0 6px;font-size:24px;text-align:center;}"
+                  "p.sub{text-align:center;margin:0 0 18px;color:#777;font-size:14px;}"
+                  "h2{color:#444;font-size:16px;margin:18px 0 10px;border-bottom:2px solid #ffe3e3;padding-bottom:6px;}"
+                  "label{display:block;margin:10px 0 4px;font-weight:600;font-size:13px;color:#555;}"
+                  "input,select{width:100%;padding:10px 12px;border:1.5px solid #ddd;border-radius:10px;box-sizing:border-box;font-size:15px;margin-bottom:8px;}"
+                  "input:focus{border-color:#ff6b81;outline:none;}"
+                  "button{background:linear-gradient(135deg,#ff6b81,#ff4757);color:#fff;border:none;padding:12px 18px;font-size:15px;font-weight:700;border-radius:12px;cursor:pointer;width:100%;margin-top:10px;box-shadow:0 4px 12px rgba(255,71,87,0.3);}"
+                  "button:active{transform:scale(0.98);}"
+                  ".row{display:flex;gap:10px;}"
+                  ".badge{display:inline-block;background:#ffeaa7;color:#d35400;padding:4px 10px;border-radius:12px;font-size:12px;font-weight:700;}"
+                  "</style></head><body>");
+
+  html += F("<div class='card'><h1>🎀 Iglet Companion</h1><p class='sub'>For ");
+  html += String(cfgGfName);
+  html += F(" with love</p>");
+
+  // 1. Live Love Note Sender (Available when connected to Wi-Fi)
+  if (WiFi.status() == WL_CONNECTED) {
+    html += F("<h2>💌 Send Live Note to Her Desk!</h2>"
+              "<form action='/sendnote' method='POST'>"
+              "<label>Top Line (Yellow zone, max 12 chars)</label>"
+              "<input type='text' name='l1' maxlength='12' placeholder='Thinking of' required>"
+              "<label>Bottom Line (Blue zone, max 12 chars)</label>"
+              "<input type='text' name='l2' maxlength='12' placeholder='you always <3' required>"
+              "<button type='submit'>Send to Her Screen 🚀</button></form>");
+  }
+
+  // 2. Settings & Wi-Fi Configuration
+  html += F("<h2>⚙️ Device & Special Dates Settings</h2>"
+            "<form action='/save' method='POST'>"
+            "<label>Her Name or Nickname</label>"
+            "<input type='text' name='name' maxlength='20' value='");
+  html += String(cfgGfName);
+  html += F("' required>"
+            "<div class='row'><div><label>🎂 Birthday Month</label>"
+            "<input type='number' name='bm' min='1' max='12' value='");
+  html += String(cfgBdayMonth);
+  html += F("'></div><div><label>Day</label>"
+            "<input type='number' name='bd' min='1' max='31' value='");
+  html += String(cfgBdayDay);
+  html += F("'></div></div>"
+            "<div class='row'><div><label>💍 Anniversary Month</label>"
+            "<input type='number' name='am' min='1' max='12' value='");
+  html += String(cfgAnnivMonth);
+  html += F("'></div><div><label>Day</label>"
+            "<input type='number' name='ad' min='1' max='31' value='");
+  html += String(cfgAnnivDay);
+  html += F("'></div></div>"
+            "<label>⏰ Timezone Offset (Hours, e.g. 5.5 for IST)</label>"
+            "<input type='number' step='0.5' name='tz' value='");
+  html += String(cfgTzOffset, 1);
+  html += F("'>"
+            "<h2>📶 Wi-Fi Settings</h2>"
+            "<label>Wi-Fi Network Name (SSID)</label>"
+            "<input type='text' name='ssid' value='");
+  html += String(cfgWifiSSID);
+  html += F("' placeholder='Home Wi-Fi'>"
+            "<label>Wi-Fi Password</label>"
+            "<input type='password' name='pass' placeholder='Leave blank if unchanged'>"
+            "<button type='submit'>Save & Connect ✨</button></form></div></body></html>");
+
+  server.send(200, "text/html", html);
+}
+
+void handleSave() {
+  if (server.hasArg("name")) {
+    strncpy(cfgGfName, server.arg("name").c_str(), sizeof(cfgGfName) - 1);
+  }
+  if (server.hasArg("bm")) cfgBdayMonth = server.arg("bm").toInt();
+  if (server.hasArg("bd")) cfgBdayDay = server.arg("bd").toInt();
+  if (server.hasArg("am")) cfgAnnivMonth = server.arg("am").toInt();
+  if (server.hasArg("ad")) cfgAnnivDay = server.arg("ad").toInt();
+  if (server.hasArg("tz")) cfgTzOffset = server.arg("tz").toFloat();
+
+  if (server.hasArg("ssid") && server.arg("ssid").length() > 0) {
+    strncpy(cfgWifiSSID, server.arg("ssid").c_str(), sizeof(cfgWifiSSID) - 1);
+  }
+  if (server.hasArg("pass") && server.arg("pass").length() > 0) {
+    strncpy(cfgWifiPass, server.arg("pass").c_str(), sizeof(cfgWifiPass) - 1);
+  }
+
+  saveSettings();
+
+  String res = F("<!DOCTYPE html><html><head><meta name='viewport' content='width=device-width,initial-scale=1'>"
+                 "<style>body{font-family:sans-serif;text-align:center;padding:40px;background:#ffeaa7;}"
+                 ".c{background:#fff;padding:30px;border-radius:15px;box-shadow:0 4px 15px rgba(0,0,0,0.1);max-width:360px;margin:auto;}"
+                 "h2{color:#e63946;}a{color:#e63946;font-weight:700;}</style></head><body>"
+                 "<div class='c'><h2>Saved! ✨</h2><p>Iglet is connecting to your Wi-Fi...</p>"
+                 "<p><a href='/'>Back to Dashboard</a></p></div></body></html>");
+  server.send(200, "text/html", res);
+
+  // Apply Wi-Fi immediately
+  delay(500);
+  startWiFiOrAP();
+}
+
+void handleSendNote() {
+  if (server.hasArg("l1") && server.hasArg("l2")) {
+    strncpy(liveNoteLine1, server.arg("l1").c_str(), sizeof(liveNoteLine1) - 1);
+    strncpy(liveNoteLine2, server.arg("l2").c_str(), sizeof(liveNoteLine2) - 1);
+    liveNoteStart = millis();
+
+    if (displayOff) {
+      display.ssd1306_command(SSD1306_DISPLAYON);
+      displayOff = false;
+    }
+    currentState = LIVE_NOTE_DISPLAY;
+    lastActivityTime = millis();
+    updateDisplay();
+
+    String res = F("<!DOCTYPE html><html><head><meta name='viewport' content='width=device-width,initial-scale=1'>"
+                   "<style>body{font-family:sans-serif;text-align:center;padding:40px;background:#ff9a9e;}"
+                   ".c{background:#fff;padding:30px;border-radius:15px;max-width:360px;margin:auto;}"
+                   "h2{color:#e63946;}a{color:#e63946;font-weight:700;}</style></head><body>"
+                   "<div class='c'><h2>Sent with Love! 💖</h2><p>Your note is on ");
+    res += String(cfgGfName);
+    res += F("'s desk right now!</p><p><a href='/'>Send another note</a></p></div></body></html>");
+    server.send(200, "text/html", res);
+  } else {
+    server.send(400, "text/plain", "Missing lines");
+  }
+}
+
+void setupWebServer() {
+  server.on("/", HTTP_GET, handleRoot);
+  server.on("/save", HTTP_POST, handleSave);
+  server.on("/sendnote", HTTP_POST, handleSendNote);
+
+  // Captive portal OS detection redirects
+  server.on("/generate_204", handleRoot);
+  server.on("/fwlink", handleRoot);
+  server.on("/hotspot-detect.html", handleRoot);
+  server.on("/ncsi.txt", handleRoot);
+
+  server.onNotFound(handleRoot);
+  server.begin();
+  Serial.println(F("Web server active."));
 }
 
 // ============================================================================
@@ -427,11 +696,30 @@ void loadSettings() {
     greetIntervalIdx = EEPROM.read(EEPROM_GREET_ADDR);
     if (greetIntervalIdx >= GREET_OPTION_COUNT) greetIntervalIdx = 2;
     remindersEnabled = EEPROM.read(EEPROM_REMIND_ADDR) != 0;
-    petLoveLevel = EEPROM.read(EEPROM_PET_ADDR);
+    petLoveLevel     = EEPROM.read(EEPROM_PET_ADDR);
     if (petLoveLevel > 5 || petLoveLevel == 0) petLoveLevel = 3;
+
+    cfgBdayMonth  = EEPROM.read(EEPROM_BDAY_M_ADDR);
+    cfgBdayDay    = EEPROM.read(EEPROM_BDAY_D_ADDR);
+    cfgAnnivMonth = EEPROM.read(EEPROM_ANN_M_ADDR);
+    cfgAnnivDay   = EEPROM.read(EEPROM_ANN_D_ADDR);
+
+    int8_t tzInt = (int8_t)EEPROM.read(EEPROM_TZ_ADDR);
+    cfgTzOffset  = (float)tzInt / 2.0f;
+
+    for (int i = 0; i < 31; i++) cfgGfName[i] = (char)EEPROM.read(EEPROM_NAME_ADDR + i);
+    cfgGfName[31] = '\0';
+
+    for (int i = 0; i < 63; i++) cfgWifiSSID[i] = (char)EEPROM.read(EEPROM_SSID_ADDR + i);
+    cfgWifiSSID[63] = '\0';
+
+    for (int i = 0; i < 63; i++) cfgWifiPass[i] = (char)EEPROM.read(EEPROM_PASS_ADDR + i);
+    cfgWifiPass[63] = '\0';
+
     Serial.println(F("Settings loaded from EEPROM."));
   } else {
-    Serial.println(F("Using default settings."));
+    Serial.println(F("No EEPROM magic, initializing defaults."));
+    saveSettings();
   }
 }
 
@@ -445,12 +733,80 @@ void saveSettings() {
   EEPROM.write(EEPROM_GREET_ADDR, greetIntervalIdx);
   EEPROM.write(EEPROM_REMIND_ADDR, remindersEnabled ? 1 : 0);
   EEPROM.write(EEPROM_PET_ADDR, petLoveLevel);
+
+  EEPROM.write(EEPROM_BDAY_M_ADDR, cfgBdayMonth);
+  EEPROM.write(EEPROM_BDAY_D_ADDR, cfgBdayDay);
+  EEPROM.write(EEPROM_ANN_M_ADDR, cfgAnnivMonth);
+  EEPROM.write(EEPROM_ANN_D_ADDR, cfgAnnivDay);
+
+  int8_t tzInt = (int8_t)(cfgTzOffset * 2.0f);
+  EEPROM.write(EEPROM_TZ_ADDR, (uint8_t)tzInt);
+
+  for (int i = 0; i < 31; i++) EEPROM.write(EEPROM_NAME_ADDR + i, cfgGfName[i]);
+  for (int i = 0; i < 63; i++) EEPROM.write(EEPROM_SSID_ADDR + i, cfgWifiSSID[i]);
+  for (int i = 0; i < 63; i++) EEPROM.write(EEPROM_PASS_ADDR + i, cfgWifiPass[i]);
+
   EEPROM.commit();
   Serial.println(F("Settings saved to EEPROM."));
 }
 
 // ============================================================================
-//  PSEUDO-RANDOM NUMBER GENERATOR (xorshift16)
+//  DATE & TIME HELPERS
+// ============================================================================
+int getDaysUntil(int targetMonth, int targetDay) {
+  if (targetMonth < 1 || targetMonth > 12 || targetDay < 1 || targetDay > 31) return -1;
+  time_t now = time(nullptr);
+  if (now < 100000) return -1;  // NTP not synced yet
+
+  struct tm* t = localtime(&now);
+  int curYear = t->tm_year + 1900;
+
+  struct tm target = *t;
+  target.tm_year = curYear - 1900;
+  target.tm_mon  = targetMonth - 1;
+  target.tm_mday = targetDay;
+  target.tm_hour = 0;
+  target.tm_min  = 0;
+  target.tm_sec  = 0;
+
+  time_t targetTime = mktime(&target);
+  double diffSec = difftime(targetTime, now);
+
+  if (diffSec < -86400.0) {
+    target.tm_year = curYear - 1900 + 1;
+    targetTime = mktime(&target);
+    diffSec = difftime(targetTime, now);
+  }
+
+  int days = (int)(diffSec / 86400.0) + 1;
+  if (days < 0) days = 0;
+  return days;
+}
+
+bool isToday(int month, int day) {
+  if (month < 1 || month > 12 || day < 1 || day > 31) return false;
+  time_t now = time(nullptr);
+  if (now < 100000) return false;
+  struct tm* t = localtime(&now);
+  return (t->tm_mon + 1 == month && t->tm_mday == day);
+}
+
+void checkDateCelebration() {
+  if (isToday(cfgBdayMonth, cfgBdayDay)) {
+    celebrationType = 1; // Birthday!
+    celebrationStart = millis();
+    currentState = CELEBRATION_DISPLAY;
+    updateDisplay();
+  } else if (isToday(cfgAnnivMonth, cfgAnnivDay)) {
+    celebrationType = 2; // Anniversary!
+    celebrationStart = millis();
+    currentState = CELEBRATION_DISPLAY;
+    updateDisplay();
+  }
+}
+
+// ============================================================================
+//  CHEAP PRNG (xorshift16)
 // ============================================================================
 uint16_t cheapRandom(uint16_t maxVal) {
   if (maxVal == 0) return 0;
@@ -462,7 +818,7 @@ uint16_t cheapRandom(uint16_t maxVal) {
 }
 
 // ============================================================================
-//  BOOT ANIMATION — "Hi [GF_NAME]!" + Beating Heart
+//  BOOT ANIMATION — "Hi [Name]!" + Beating Heart
 // ============================================================================
 void bootAnimation() {
   unsigned long elapsed = millis() - bootStartTime;
@@ -470,7 +826,7 @@ void bootAnimation() {
   if (elapsed < 600) {
     display.clearDisplay();
     display.setTextColor(WHITE);
-    String greeting = "Hi " + String(GF_NAME) + "!";
+    String greeting = "Hi " + String(cfgGfName) + "!";
     int len = greeting.length();
     int tSize = (len > 9) ? 1 : 2;
     display.setTextSize(tSize);
@@ -482,7 +838,7 @@ void bootAnimation() {
   } else if (elapsed < 2600) {
     display.clearDisplay();
     display.setTextColor(WHITE);
-    String greeting = "Hi " + String(GF_NAME) + "!";
+    String greeting = "Hi " + String(cfgGfName) + "!";
     int len = greeting.length();
     int tSize = (len > 9) ? 1 : 2;
     display.setTextSize(tSize);
@@ -491,15 +847,18 @@ void bootAnimation() {
     display.setCursor((128 - w) / 2, (tSize == 2) ? 0 : 4);
     display.print(greeting);
 
-    // Beating heart in blue zone
     int heartPhase = ((elapsed - 600) / 250) % 4;
     int heartSize = (heartPhase < 2) ? 9 + heartPhase * 3 : 15 - heartPhase * 2;
     drawHeart(64, 44, heartSize);
 
     display.display();
   } else {
-    currentState = MENU;
-    updateDisplay();
+    // Check if today is a birthday or anniversary celebration!
+    checkDateCelebration();
+    if (currentState != CELEBRATION_DISPLAY) {
+      currentState = MENU;
+      updateDisplay();
+    }
   }
 }
 
@@ -520,75 +879,31 @@ void drawHeart(int cx, int cy, int size) {
   );
 }
 
-void drawSleepyFace() {
-  display.setTextSize(2);
-  display.setTextColor(WHITE);
-  display.setCursor(16, 32);
-  display.print(F("(-_-)zzZ"));
-}
-
-void drawMoodFace(uint8_t mood, int cx, int cy, int r) {
-  display.drawCircle(cx, cy, r, WHITE);
-  int eyeY = cy - r / 3;
-  int eyeSpacing = r / 2;
-
-  switch (mood) {
-    case 0: // Happy :)
-      display.fillCircle(cx - eyeSpacing, eyeY, 2, WHITE);
-      display.fillCircle(cx + eyeSpacing, eyeY, 2, WHITE);
-      for (int i = -eyeSpacing; i <= eyeSpacing; i++) {
-        int sy = cy + r / 4 + (i * i) / (r * 2);
-        display.drawPixel(cx + i, sy, WHITE);
-      }
-      break;
-
-    case 1: // Okay :|
-      display.fillCircle(cx - eyeSpacing, eyeY, 2, WHITE);
-      display.fillCircle(cx + eyeSpacing, eyeY, 2, WHITE);
-      display.drawLine(cx - eyeSpacing, cy + r / 4, cx + eyeSpacing, cy + r / 4, WHITE);
-      break;
-
-    case 2: // Sad :(
-      display.fillCircle(cx - eyeSpacing, eyeY, 2, WHITE);
-      display.fillCircle(cx + eyeSpacing, eyeY, 2, WHITE);
-      for (int i = -eyeSpacing; i <= eyeSpacing; i++) {
-        int sy = cy + r / 2 - (i * i) / (r * 2);
-        display.drawPixel(cx + i, sy, WHITE);
-      }
-      break;
-
-    case 3: // Angry >:(
-      display.drawLine(cx - eyeSpacing - 2, eyeY - 4, cx - eyeSpacing + 2, eyeY - 2, WHITE);
-      display.drawLine(cx + eyeSpacing + 2, eyeY - 4, cx + eyeSpacing - 2, eyeY - 2, WHITE);
-      display.fillCircle(cx - eyeSpacing, eyeY, 2, WHITE);
-      display.fillCircle(cx + eyeSpacing, eyeY, 2, WHITE);
-      for (int i = -eyeSpacing; i <= eyeSpacing; i++) {
-        int sy = cy + r / 2 - (i * i) / (r * 2);
-        display.drawPixel(cx + i, sy, WHITE);
-      }
-      break;
-
-    case 4: // Love <3
-      drawHeart(cx - eyeSpacing, eyeY, 4);
-      drawHeart(cx + eyeSpacing, eyeY, 4);
-      for (int i = -eyeSpacing; i <= eyeSpacing; i++) {
-        int sy = cy + r / 4 + (i * i) / r;
-        display.drawPixel(cx + i, sy, WHITE);
-      }
-      break;
-  }
+void drawCake(int cx, int cy) {
+  // 2-tier cute cake
+  display.fillRect(cx - 16, cy + 2, 32, 14, WHITE);
+  display.fillRect(cx - 12, cy - 8, 24, 10, WHITE);
+  // Frosting line
+  display.drawLine(cx - 16, cy + 2, cx + 16, cy + 2, BLACK);
+  // 3 candles
+  display.drawLine(cx - 8, cy - 12, cx - 8, cy - 8, WHITE);
+  display.drawLine(cx,     cy - 12, cx,     cy - 8, WHITE);
+  display.drawLine(cx + 8, cy - 12, cx + 8, cy - 8, WHITE);
+  // Flames
+  display.drawPixel(cx - 8, cy - 14, WHITE);
+  display.drawPixel(cx,     cy - 14, WHITE);
+  display.drawPixel(cx + 8, cy - 14, WHITE);
 }
 
 void drawPet(int cx, int cy, uint8_t animState, int bounceY) {
   int y = cy + bounceY;
 
-  // Body: Chubby round white creature
+  // Body: Round white creature
   display.fillCircle(cx, y, 13, WHITE);
 
   // Cute ears
   display.fillTriangle(cx - 9, y - 6, cx - 6, y - 18, cx - 3, y - 6, WHITE);
   display.fillTriangle(cx + 3, y - 6, cx + 6, y - 18, cx + 9, y - 6, WHITE);
-  // Inner ear indent
   display.drawLine(cx - 6, y - 7, cx - 6, y - 14, BLACK);
   display.drawLine(cx + 6, y - 7, cx + 6, y - 14, BLACK);
 
@@ -597,17 +912,16 @@ void drawPet(int cx, int cy, uint8_t animState, int bounceY) {
   display.fillCircle(cx + 8, y + 11, 2, WHITE);
 
   if (animState == 0) {
-    // Idle / Happy: cute eyes ( • ◡ • )
+    // Normal eyes ( • ◡ • )
     display.fillCircle(cx - 4, y - 2, 1, BLACK);
     display.fillCircle(cx + 4, y - 2, 1, BLACK);
-    // Smile
     display.drawPixel(cx - 2, y + 3, BLACK);
     display.drawPixel(cx - 1, y + 4, BLACK);
     display.drawPixel(cx,     y + 4, BLACK);
     display.drawPixel(cx + 1, y + 4, BLACK);
     display.drawPixel(cx + 2, y + 3, BLACK);
   } else if (animState == 1) {
-    // Petting: Joyful squinting eyes ( > ◡ < ) + blushing + hearts!
+    // Petting: Joyful squint ( > ◡ < ) + hearts
     display.drawLine(cx - 6, y - 3, cx - 4, y - 1, BLACK);
     display.drawLine(cx - 4, y - 1, cx - 2, y - 3, BLACK);
     display.drawLine(cx + 2, y - 3, cx + 4, y - 1, BLACK);
@@ -617,7 +931,7 @@ void drawPet(int cx, int cy, uint8_t animState, int bounceY) {
     drawHeart(cx + 18, y - 10, 4);
     drawHeart(cx, y - 20, 5);
   } else if (animState == 2) {
-    // Eating: Nom mouth ( ^ o ^ ) + treat
+    // Eating: Nom mouth + cookie
     display.drawLine(cx - 5, y - 2, cx - 2, y - 2, BLACK);
     display.drawLine(cx + 2, y - 2, cx + 5, y - 2, BLACK);
     display.fillCircle(cx, y + 3, 3, BLACK);
@@ -627,7 +941,7 @@ void drawPet(int cx, int cy, uint8_t animState, int bounceY) {
     display.setCursor(cx + 15, y - 8);
     display.print(F("Yum!"));
   } else if (animState == 3) {
-    // Playing: Winking sparkle eyes + stars
+    // Playing: Winking + stars
     display.drawLine(cx - 5, y - 2, cx - 2, y - 2, BLACK);
     display.fillCircle(cx + 4, y - 2, 1, BLACK);
     display.drawLine(cx - 3, y + 2, cx + 3, y + 2, BLACK);
@@ -644,6 +958,50 @@ void drawPet(int cx, int cy, uint8_t animState, int bounceY) {
     display.setTextSize(1);
     display.setCursor(cx + 14, y - 10);
     display.print(F("zZ"));
+  }
+}
+
+void drawMoodFace(uint8_t mood, int cx, int cy, int r) {
+  display.drawCircle(cx, cy, r, WHITE);
+  int eyeY = cy - r / 3;
+  int eyeSpacing = r / 2;
+
+  switch (mood) {
+    case 0: // Happy
+      display.fillCircle(cx - eyeSpacing, eyeY, 2, WHITE);
+      display.fillCircle(cx + eyeSpacing, eyeY, 2, WHITE);
+      for (int i = -eyeSpacing; i <= eyeSpacing; i++) {
+        display.drawPixel(cx + i, cy + r / 4 + (i * i) / (r * 2), WHITE);
+      }
+      break;
+    case 1: // Okay
+      display.fillCircle(cx - eyeSpacing, eyeY, 2, WHITE);
+      display.fillCircle(cx + eyeSpacing, eyeY, 2, WHITE);
+      display.drawLine(cx - eyeSpacing, cy + r / 4, cx + eyeSpacing, cy + r / 4, WHITE);
+      break;
+    case 2: // Sad
+      display.fillCircle(cx - eyeSpacing, eyeY, 2, WHITE);
+      display.fillCircle(cx + eyeSpacing, eyeY, 2, WHITE);
+      for (int i = -eyeSpacing; i <= eyeSpacing; i++) {
+        display.drawPixel(cx + i, cy + r / 2 - (i * i) / (r * 2), WHITE);
+      }
+      break;
+    case 3: // Angry
+      display.drawLine(cx - eyeSpacing - 2, eyeY - 4, cx - eyeSpacing + 2, eyeY - 2, WHITE);
+      display.drawLine(cx + eyeSpacing + 2, eyeY - 4, cx + eyeSpacing - 2, eyeY - 2, WHITE);
+      display.fillCircle(cx - eyeSpacing, eyeY, 2, WHITE);
+      display.fillCircle(cx + eyeSpacing, eyeY, 2, WHITE);
+      for (int i = -eyeSpacing; i <= eyeSpacing; i++) {
+        display.drawPixel(cx + i, cy + r / 2 - (i * i) / (r * 2), WHITE);
+      }
+      break;
+    case 4: // Love
+      drawHeart(cx - eyeSpacing, eyeY, 4);
+      drawHeart(cx + eyeSpacing, eyeY, 4);
+      for (int i = -eyeSpacing; i <= eyeSpacing; i++) {
+        display.drawPixel(cx + i, cy + r / 4 + (i * i) / r, WHITE);
+      }
+      break;
   }
 }
 
@@ -686,6 +1044,9 @@ void updateDisplay() {
     case PET_VIEW:
       renderPet();
       break;
+    case DAYS_VIEW:
+      renderDays();
+      break;
     case COMPLIMENT_ROULETTE:
     case COMPLIMENT_RESULT:
       renderCompliment();
@@ -698,13 +1059,15 @@ void updateDisplay() {
       renderBreathSelect();
       break;
     case BREATHING_EXERCISE:
-      // Rendered continuously in handleBreathingAnimation
       break;
     case MOOD_SELECT:
       renderMoodSelect();
       break;
     case MOOD_RESPONSE:
       renderMoodResponse();
+      break;
+    case WIFI_PORTAL_VIEW:
+      renderWiFiPortal();
       break;
     case GREET_SELECT:
       renderGreetSelect();
@@ -715,6 +1078,12 @@ void updateDisplay() {
     case GREETING_WAKEUP:
       renderGreeting();
       break;
+    case LIVE_NOTE_DISPLAY:
+      renderLiveNote();
+      break;
+    case CELEBRATION_DISPLAY:
+      renderCelebration();
+      break;
     default:
       break;
   }
@@ -724,25 +1093,21 @@ void updateDisplay() {
 
 // ── Render: Main Menu ───────────────────────────────────────────────────────
 void renderMenu() {
-  // Yellow zone: Flow time on left, Auto-Wake interval on right
   display.setTextSize(1);
-  String flowStr;
-  if (flowMinutes < 1000) {
-    flowStr = "Flow:" + String(flowMinutes) + "m";
-  } else {
-    flowStr = "F:" + String(flowMinutes / 60) + "h";
-  }
+  String flowStr = (flowMinutes < 1000) ? "Flow:" + String(flowMinutes) + "m" : "F:" + String(flowMinutes / 60) + "h";
   display.setCursor(0, 4);
   display.print(flowStr);
 
-  display.setCursor(88, 4);
-  if (greetIntervals[greetIntervalIdx] > 0) {
-    display.print(greetLabels[greetIntervalIdx]);
+  display.setCursor(84, 4);
+  if (WiFi.status() == WL_CONNECTED) {
+    display.print(F("WiFi \x09")); // connected dot
+  } else if (apModeActive) {
+    display.print(F("AP Set"));
   } else {
-    display.print(F("Off"));
+    display.print(greetLabels[greetIntervalIdx]);
   }
 
-  // Blue zone: Large current menu item
+  // Large menu text
   display.setTextSize(3);
   String item = mainMenuItems[menuIndex];
   int w = item.length() * 18;
@@ -765,7 +1130,7 @@ void renderMenu() {
 // ── Render: Idle ────────────────────────────────────────────────────────────
 void renderIdle() {
   display.setTextSize(1);
-  display.setCursor(18, 4);
+  display.setCursor(16, 4);
   display.print(DEVICE_NAME);
   display.print(F(" is sleeping"));
   drawPet(64, 38, 4, 0);
@@ -773,7 +1138,6 @@ void renderIdle() {
 
 // ── Render: Virtual Pet ─────────────────────────────────────────────────────
 void renderPet() {
-  // Yellow zone: Pet name & Love level
   display.setTextSize(1);
   display.setCursor(0, 4);
   display.print(DEVICE_NAME);
@@ -788,13 +1152,7 @@ void renderPet() {
     }
   }
 
-  int bounceY = 0;
-  if (petAnimState == 3) {
-    bounceY = (millis() / 150) % 2 == 0 ? -4 : 0;
-  } else {
-    bounceY = (millis() / 700) % 2 == 0 ? 0 : 1;
-  }
-
+  int bounceY = (petAnimState == 3) ? ((millis() / 150) % 2 == 0 ? -4 : 0) : ((millis() / 700) % 2 == 0 ? 0 : 1);
   drawPet(64, 33, petAnimState, bounceY);
 
   if (petAnimState == 1) {
@@ -823,6 +1181,163 @@ void renderPet() {
   }
 }
 
+// ── Render: Feature 10: Days View (Countdowns & Clock) ───────────────────────
+void renderDays() {
+  display.setTextSize(1);
+
+  if (daysSubIndex == 0) {
+    // Anniversary countdown
+    display.setCursor(20, 4);
+    display.print(F("Our Anniversary <3"));
+
+    int days = getDaysUntil(cfgAnnivMonth, cfgAnnivDay);
+    if (days == -1) {
+      display.setTextSize(1);
+      display.setCursor(8, 28);
+      display.print(F("Sync WiFi in menu"));
+      display.setCursor(8, 42);
+      display.print(F("or set dates on phone"));
+    } else if (days == 0) {
+      display.setTextSize(2);
+      display.setCursor(20, 32);
+      display.print(F("TODAY!! <3"));
+    } else {
+      display.setTextSize(3);
+      String s = "in " + String(days) + "d";
+      int w = s.length() * 18;
+      display.setCursor((128 - w) / 2, 28);
+      display.print(s);
+    }
+  } else if (daysSubIndex == 1) {
+    // Birthday countdown
+    display.setCursor(16, 4);
+    display.print(String(cfgGfName) + "'s Birthday *");
+
+    int days = getDaysUntil(cfgBdayMonth, cfgBdayDay);
+    if (days == -1) {
+      display.setTextSize(1);
+      display.setCursor(8, 28);
+      display.print(F("Sync WiFi in menu"));
+      display.setCursor(8, 42);
+      display.print(F("or set dates on phone"));
+    } else if (days == 0) {
+      display.setTextSize(2);
+      display.setCursor(20, 32);
+      display.print(F("TODAY!! 🎂"));
+    } else {
+      display.setTextSize(3);
+      String s = "in " + String(days) + "d";
+      int w = s.length() * 18;
+      display.setCursor((128 - w) / 2, 28);
+      display.print(s);
+    }
+  } else {
+    // Live Clock & Date
+    time_t now = time(nullptr);
+    if (now > 100000) {
+      struct tm* t = localtime(&now);
+      char dateBuf[20];
+      strftime(dateBuf, sizeof(dateBuf), "%d %b %Y", t);
+      display.setCursor((128 - strlen(dateBuf) * 6) / 2, 4);
+      display.print(dateBuf);
+
+      char timeBuf[10];
+      strftime(timeBuf, sizeof(timeBuf), "%H:%M", t);
+      display.setTextSize(3);
+      display.setCursor((128 - 5 * 18) / 2, 28);
+      display.print(timeBuf);
+    } else {
+      display.setCursor(24, 4);
+      display.print(F("Internet Clock"));
+      display.setTextSize(1);
+      display.setCursor(14, 32);
+      display.print(F("Connecting WiFi..."));
+    }
+  }
+
+  // Bottom dots indicator (3 pages)
+  for (uint8_t i = 0; i < 3; i++) {
+    if (i == daysSubIndex) display.fillCircle(56 + i * 8, 60, 2, WHITE);
+    else display.drawCircle(56 + i * 8, 60, 1, WHITE);
+  }
+}
+
+// ── Render: Feature 11: Celebration Display ─────────────────────────────────
+void renderCelebration() {
+  if (celebrationType == 1) {
+    // Birthday!
+    display.setTextSize(1);
+    display.setCursor(14, 4);
+    display.print(F("HAPPY BIRTHDAY! <3"));
+    drawCake(64, 38);
+    display.setTextSize(2);
+    String n = String(cfgGfName) + "!";
+    display.setCursor((128 - n.length() * 12) / 2, 48);
+    display.print(n);
+  } else {
+    // Anniversary!
+    display.setTextSize(1);
+    display.setCursor(8, 4);
+    display.print(F("HAPPY ANNIVERSARY! <3"));
+    drawHeart(64, 36, 16);
+    display.setTextSize(1);
+    display.setCursor(24, 52);
+    display.print(F("Forever & Always"));
+  }
+}
+
+// ── Render: Live Love Note Sent From Phone ───────────────────────────────────
+void renderLiveNote() {
+  display.setTextSize(1);
+  display.setCursor(4, 4);
+  display.print(F("Live Note for "));
+  display.print(cfgGfName);
+  display.print(F(" <3"));
+
+  int len1 = strlen(liveNoteLine1);
+  int sz1 = (len1 > 7) ? 2 : 3;
+  display.setTextSize(sz1);
+  int w1 = len1 * ((sz1 == 3) ? 18 : 12);
+  display.setCursor((128 - w1) / 2, 22);
+  display.print(liveNoteLine1);
+
+  int len2 = strlen(liveNoteLine2);
+  int sz2 = (len2 > 7) ? 2 : 3;
+  display.setTextSize(sz2);
+  int w2 = len2 * ((sz2 == 3) ? 18 : 12);
+  display.setCursor((128 - w2) / 2, 42);
+  display.print(liveNoteLine2);
+
+  drawHeart(118, 56, 4);
+}
+
+// ── Render: Wi-Fi Portal Status ─────────────────────────────────────────────
+void renderWiFiPortal() {
+  display.setTextSize(1);
+  display.setCursor(20, 4);
+  display.print(F("Phone Web Setup"));
+
+  if (WiFi.status() == WL_CONNECTED) {
+    display.setCursor(4, 22);
+    display.print(F("Connected to:"));
+    display.setCursor(4, 32);
+    display.print(cfgWifiSSID);
+    display.setCursor(4, 44);
+    display.print(F("Open on phone:"));
+    display.setCursor(4, 54);
+    display.print(F("http://iglet.local"));
+  } else {
+    display.setCursor(4, 20);
+    display.print(F("1. Join Wi-Fi:"));
+    display.setTextSize(2);
+    display.setCursor(4, 30);
+    display.print(F("Iglet-Setup"));
+    display.setTextSize(1);
+    display.setCursor(4, 48);
+    display.print(F("2. Open: 192.168.4.1"));
+  }
+}
+
 // ── Render: Timer Up ────────────────────────────────────────────────────────
 void renderTimerUp() {
   display.setTextSize(2);
@@ -838,7 +1353,7 @@ void renderTimerUp() {
   display.print(mins);
 }
 
-// ── Render: Timer Down / Select Duration ────────────────────────────────────
+// ── Render: Timer Down ──────────────────────────────────────────────────────
 void renderTimerDown() {
   display.setTextSize(2);
   String topText = (currentState == SELECTING_DOWN_DURATION) ? "Set time" : "Focus! \x19";
@@ -888,7 +1403,7 @@ void renderLoveNote() {
   display.setTextSize(1);
   display.setCursor(4, 4);
   display.print(F("To "));
-  display.print(GF_NAME);
+  display.print(cfgGfName);
   display.print(F(" <3"));
 
   display.setCursor(96, 4);
@@ -1042,13 +1557,13 @@ void renderReminder() {
   display.print(r2);
 }
 
-// ── Render: Auto-Wake Greeting ──────────────────────────────────────────────
+// ── Render: Greeting ────────────────────────────────────────────────────────
 void renderGreeting() {
   renderLoveNote();
 }
 
 // ============================================================================
-//  ANIMATION HANDLERS (non-blocking)
+//  ANIMATION HANDLERS
 // ============================================================================
 void handleRouletteSpin(unsigned long now) {
   unsigned long elapsed = now - rouletteLastSpin;
@@ -1155,17 +1670,9 @@ void handleBreathingAnimation(unsigned long now) {
   display.print(F("/"));
   display.print(breathCycles);
 
-  int minR = 5;
-  int maxR = 21;
-  int radius;
-
-  if (breathPhase == 0) {
-    radius = minR + (int)((maxR - minR) * progress);
-  } else if (breathPhase == 1) {
-    radius = maxR;
-  } else {
-    radius = maxR - (int)((maxR - minR) * progress);
-  }
+  int minR = 5, maxR = 21;
+  int radius = (breathPhase == 0) ? (minR + (int)((maxR - minR) * progress)) :
+               (breathPhase == 1) ? maxR : (maxR - (int)((maxR - minR) * progress));
 
   display.drawCircle(64, 42, radius, WHITE);
   display.drawCircle(64, 42, radius - 1, WHITE);
@@ -1175,7 +1682,7 @@ void handleBreathingAnimation(unsigned long now) {
 }
 
 // ============================================================================
-//  AUTO-WAKE GREETING DISPATCHER
+//  AUTO GREETINGS & REMINDERS
 // ============================================================================
 void handleAutoGreeting(unsigned long now) {
   if (greetIntervals[greetIntervalIdx] == 0) return;
@@ -1194,13 +1701,9 @@ void handleAutoGreeting(unsigned long now) {
     currentState = GREETING_WAKEUP;
     lastActivityTime = now;
     updateDisplay();
-    Serial.println(F("Auto greeting displayed!"));
   }
 }
 
-// ============================================================================
-//  GENTLE REMINDERS DISPATCHER
-// ============================================================================
 void handleReminders(unsigned long now) {
   if (!remindersEnabled) return;
   if (currentState != MENU && currentState != IDLE) return;
@@ -1217,7 +1720,6 @@ void handleReminders(unsigned long now) {
     currentState = REMINDER_DISPLAY;
     lastActivityTime = now;
     updateDisplay();
-    Serial.println(F("Gentle reminder displayed!"));
   }
 }
 
@@ -1264,6 +1766,7 @@ void handleRotaryInput() {
     case IDLE:
     case GREETING_WAKEUP:
     case REMINDER_DISPLAY:
+    case LIVE_NOTE_DISPLAY:
       currentState = MENU;
       if (displayOff) {
         display.ssd1306_command(SSD1306_DISPLAYON);
@@ -1293,6 +1796,11 @@ void handleRotaryInput() {
         petActionIndex = (petActionIndex + rotation + PET_ACTION_COUNT) % PET_ACTION_COUNT;
         updateDisplay();
       }
+      break;
+
+    case DAYS_VIEW:
+      daysSubIndex = (daysSubIndex + rotation + 3) % 3;
+      updateDisplay();
       break;
 
     case COMPLIMENT_ROULETTE:
@@ -1337,6 +1845,9 @@ void handleButtonPresses(unsigned long now) {
     case COMPLIMENT_RESULT:
     case DECISION_RESULT:
     case MOOD_RESPONSE:
+    case LIVE_NOTE_DISPLAY:
+    case WIFI_PORTAL_VIEW:
+    case DAYS_VIEW:
       currentState = MENU;
       if (displayOff) {
         display.ssd1306_command(SSD1306_DISPLAYON);
@@ -1474,58 +1985,70 @@ void handleMenuSelection(unsigned long now) {
       currentState = LOVE_NOTE_DISPLAY;
       break;
 
-    case 1:  // Pet — Virtual Pet!
+    case 1:  // Pet — Virtual Pet
       currentState = PET_VIEW;
       petActionIndex = 0;
       petAnimState = 0;
       break;
 
-    case 2:  // Spin! — Compliment roulette
+    case 2:  // Days — Event Countdowns (Anniversary, Birthday, Clock)
+      daysSubIndex = 0;
+      currentState = DAYS_VIEW;
+      break;
+
+    case 3:  // Spin! — Compliment roulette
       rouletteSpinning = false;
       rouletteIndex = 0;
       currentState = COMPLIMENT_ROULETTE;
       break;
 
-    case 3:  // Decide — Decision maker
+    case 4:  // Decide — Decision maker
       currentState = DECISION_ORACLE;
       decisionAnimStart = now;
       decisionIndex = 0;
       break;
 
-    case 4:  // Breathe — Breathing exercise
+    case 5:  // Breathe — Breathing exercise
       breathCycles = 3;
       currentState = BREATHING_SELECT;
       break;
 
-    case 5:  // Mood — Mood check-in
+    case 6:  // Mood — Mood check-in
       moodSelection = 0;
       currentState = MOOD_SELECT;
       break;
 
-    case 6:  // Wake — Auto-wake greeting interval
+    case 7:  // WiFi — Status / Setup Hotspot
+      if (WiFi.status() != WL_CONNECTED && !apModeActive) {
+        startAPMode();
+      }
+      currentState = WIFI_PORTAL_VIEW;
+      break;
+
+    case 8:  // Wake — Auto-wake greeting interval
       currentState = GREET_SELECT;
       break;
 
-    case 7:  // UP — Count up focus timer
+    case 9:  // UP — Count up focus timer
       currentState = COUNTING_UP;
       elapsedMinutes = 0;
       isCounting = true;
       previousMillis = now;
       break;
 
-    case 8:  // DOWN — Countdown focus timer
+    case 10: // DOWN — Countdown focus timer
       currentState = SELECTING_DOWN_DURATION;
       countdownValue = 20;
       break;
 
-    case 9:  // POMO — Pomodoro focus timer
+    case 11: // POMO — Pomodoro focus timer
       currentState = SELECTING_POMO_FOCUS;
       pomodoroFocusMinutes = 25;
       pomodoroRestMinutes = 5;
       countdownValue = pomodoroFocusMinutes;
       break;
 
-    case 10: // Reset — Reset total focus minutes
+    case 12: // Reset — Reset total focus minutes
       flowMinutes = 0;
       saveSettings();
       break;
@@ -1580,7 +2103,6 @@ void successAnimation() {
   display.clearDisplay();
   int centerX = 64, centerY = 32;
 
-  // Expanding ripple circles
   for (int radius = 2; radius <= 30; radius += 2) {
     display.drawCircle(centerX, centerY, radius, WHITE);
     display.display();
@@ -1592,7 +2114,6 @@ void successAnimation() {
     }
   }
 
-  // Heart finale
   display.clearDisplay();
   drawHeart(64, 26, 16);
   display.setTextSize(1);
@@ -1612,7 +2133,8 @@ void handleInactivity(unsigned long now) {
                   currentState == SELECTING_POMO_FOCUS || currentState == SELECTING_POMO_REST ||
                   currentState == LOVE_NOTE_DISPLAY || currentState == MOOD_SELECT ||
                   currentState == BREATHING_SELECT || currentState == GREET_SELECT ||
-                  currentState == PET_VIEW);
+                  currentState == PET_VIEW || currentState == DAYS_VIEW ||
+                  currentState == WIFI_PORTAL_VIEW);
 
   if (mayIdle && (now - lastActivityTime > inactivityLimit)) {
     if (currentState != IDLE) {
