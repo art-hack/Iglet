@@ -170,9 +170,8 @@ You can also customize the 20 love notes, roulette compliments, and decision mak
 
 | Action | Control | Result |
 | :--- | :--- | :--- |
-| **Navigate Menu** | Rotate Dial | Cycles through: `Notes` → `Pet` → `Days` → `Spin!` → `Decide` → `Breathe` → `Mood` → `WiFi` → `Wake` → `UP` → `DOWN` → `POMO` → `Reset` |
+| **Navigate Menu** | Rotate Dial | Cycles through: `Pet` → `Days` → `Spin!` → `Decide` → `Breathe` → `Mood` → `WiFi` → `Wake` → `UP` → `DOWN` → `POMO` → `Reset` |
 | **Select / Enter** | Click Dial | Opens selected feature |
-| **Love Notes** | Rotate in `Notes` | Browses through all 20 notes (`1/20`, `2/20`...) |
 | **Virtual Pet** | Rotate in `Pet` | Select `Pet`, `Feed`, `Play`, or `Exit`; Click to interact & raise Love Level |
 | **Days / Clock** | Rotate in `Days` | Toggle between Anniversary countdown, Birthday countdown, and live NTP clock |
 | **Spin Roulette** | Rotate or Click in `Spin!` | Triggers spin animation, reveals compliment |

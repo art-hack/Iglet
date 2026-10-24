@@ -185,21 +185,20 @@ State currentState = BOOT_ANIM;
 
 // ── Main Menu ───────────────────────────────────────────────────────────────
 const char* const mainMenuItems[] = {
-  "Notes",       // 0: Love notes
-  "Pet",         // 1: Virtual Pet (Tamagotchi-lite)
-  "Days",        // 2: Event Countdowns (Anniversary, Birthday, Clock)
-  "Spin!",       // 3: Compliment roulette
-  "Decide",      // 4: Decision maker
-  "Breathe",     // 5: Breathing exercise
-  "Mood",        // 6: Mood check-in
-  "WiFi",        // 7: Wi-Fi status / Web Portal
-  "Wake",        // 8: Auto-wake greeting interval
-  "UP",          // 9: Count up focus timer
-  "DOWN",        // 10: Countdown focus timer
-  "POMO",        // 11: Pomodoro focus timer
-  "Reset"        // 12: Reset total flow minutes
+  "Pet",         // 0: Virtual Pet (Tamagotchi-lite)
+  "Days",        // 1: Event Countdowns (Anniversary, Birthday, Clock)
+  "Spin!",       // 2: Compliment roulette
+  "Decide",      // 3: Decision maker
+  "Breathe",     // 4: Breathing exercise
+  "Mood",        // 5: Mood check-in
+  "WiFi",        // 6: Wi-Fi status / Web Portal
+  "Wake",        // 7: Auto-wake greeting interval
+  "UP",          // 8: Count up focus timer
+  "DOWN",        // 9: Countdown focus timer
+  "POMO",        // 10: Pomodoro focus timer
+  "Reset"        // 11: Reset total flow minutes
 };
-const uint8_t MAIN_MENU_COUNT = 13;
+const uint8_t MAIN_MENU_COUNT = 12;
 
 // ── Focus Timer Variables ───────────────────────────────────────────────────
 int flowMinutes = 0;
@@ -2007,75 +2006,70 @@ void handleButtonPresses(unsigned long now) {
 // ── Menu Selection Handler ──────────────────────────────────────────────────
 void handleMenuSelection(unsigned long now) {
   switch (menuIndex) {
-    case 0:  // Notes — Love notes
-      currentNoteIndex = cheapRandom(LOVE_NOTE_COUNT);
-      currentState = LOVE_NOTE_DISPLAY;
-      break;
-
-    case 1:  // Pet — Virtual Pet
+    case 0:  // Pet — Virtual Pet
       currentState = PET_VIEW;
       petActionIndex = 0;
       petAnimState = 0;
       break;
 
-    case 2:  // Days — Event Countdowns (Anniversary, Birthday, Clock)
+    case 1:  // Days — Event Countdowns (Anniversary, Birthday, Clock)
       daysSubIndex = 0;
       currentState = DAYS_VIEW;
       break;
 
-    case 3:  // Spin! — Compliment roulette
+    case 2:  // Spin! — Compliment roulette
       rouletteSpinning = false;
       rouletteIndex = 0;
       currentState = COMPLIMENT_ROULETTE;
       break;
 
-    case 4:  // Decide — Decision maker
+    case 3:  // Decide — Decision maker
       currentState = DECISION_ORACLE;
       decisionAnimStart = now;
       decisionIndex = 0;
       break;
 
-    case 5:  // Breathe — Breathing exercise
+    case 4:  // Breathe — Breathing exercise
       breathCycles = 3;
       currentState = BREATHING_SELECT;
       break;
 
-    case 6:  // Mood — Mood check-in
+    case 5:  // Mood — Mood check-in
       moodSelection = 0;
       currentState = MOOD_SELECT;
       break;
 
-    case 7:  // WiFi — Status / Setup Hotspot
+    case 6:  // WiFi — Status / Setup Hotspot
       if (WiFi.status() != WL_CONNECTED && !apModeActive) {
         startAPMode();
       }
       currentState = WIFI_PORTAL_VIEW;
       break;
 
-    case 8:  // Wake — Auto-wake greeting interval
+    case 7:  // Wake — Auto-wake greeting interval
       currentState = GREET_SELECT;
       break;
 
-    case 9:  // UP — Count up focus timer
+    case 8:  // UP — Count up focus timer
       currentState = COUNTING_UP;
       elapsedMinutes = 0;
       isCounting = true;
       previousMillis = now;
       break;
 
-    case 10: // DOWN — Countdown focus timer
+    case 9:  // DOWN — Countdown focus timer
       currentState = SELECTING_DOWN_DURATION;
       countdownValue = 20;
       break;
 
-    case 11: // POMO — Pomodoro focus timer
+    case 10: // POMO — Pomodoro focus timer
       currentState = SELECTING_POMO_FOCUS;
       pomodoroFocusMinutes = 25;
       pomodoroRestMinutes = 5;
       countdownValue = pomodoroFocusMinutes;
       break;
 
-    case 12: // Reset — Reset total focus minutes
+    case 11: // Reset — Reset total focus minutes
       flowMinutes = 0;
       saveSettings();
       break;
