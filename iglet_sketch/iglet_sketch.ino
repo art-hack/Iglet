@@ -10,13 +10,13 @@
 //  Pinout:
 //    - OLED SDA:        D2 (GPIO4)
 //    - OLED SCL:        D1 (GPIO5)
-//    - OLED VCC:        3.3V or 5V (check display specs)
-//    - OLED GND:        GND
+//    - OLED VCC:        5V (or 3.3V)
+//    - OLED GND:        GND (G pin)
 //    - Encoder CLK:     D6 (GPIO12)
 //    - Encoder DT:      D7 (GPIO13)
 //    - Encoder SW:      D4 (GPIO2)
-//    - Encoder VCC:     3.3V
-//    - Encoder GND:     GND
+//    - Encoder VCC:     3.3V (3V3 pin)
+//    - Encoder GND:     D5 (Software GND — no wire splitter needed!) or G pin
 //
 //  Libraries (built-in to ESP8266 Core & Adafruit):
 //    - ESP8266WiFi, ESP8266WebServer, DNSServer, ESP8266mDNS, time.h
@@ -37,9 +37,10 @@
 Adafruit_SSD1306 display(128, 64, &Wire, -1);
 
 // ── Rotary Encoder Pins ─────────────────────────────────────────────────────
-#define CLK    D6
-#define DT     D7
-#define SW     D4
+#define CLK      D6
+#define DT       D7
+#define SW       D4
+#define ENC_GND  D5   // Extra GND pin for Encoder (No Y-splitter or wire splicing needed!)
 
 // ============================================================================
 //  PERSONALIZATION (Private config or Public defaults)
@@ -396,6 +397,10 @@ void setup() {
   pinMode(CLK, INPUT_PULLUP);
   pinMode(DT, INPUT_PULLUP);
   pinMode(SW, INPUT_PULLUP);
+
+  // Configure D5 as extra Ground pin for Rotary Encoder (allows direct 1-to-1 female jumper connection!)
+  pinMode(ENC_GND, OUTPUT);
+  digitalWrite(ENC_GND, LOW);
 
   attachInterrupt(digitalPinToInterrupt(CLK), handleEncoderInterrupt, CHANGE);
   attachInterrupt(digitalPinToInterrupt(DT),  handleEncoderInterrupt, CHANGE);
