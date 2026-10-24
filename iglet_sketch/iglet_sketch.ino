@@ -453,25 +453,31 @@ void loop() {
     }
   }
 
-  // Check background Wi-Fi connection
-  if (wifiConnecting) {
-    if (WiFi.status() == WL_CONNECTED) {
-      wifiConnecting = false;
-      Serial.print(F("WiFi connected! IP: "));
-      Serial.println(WiFi.localIP());
+  // Background Wi-Fi connection and re-connection monitor
+  static bool wasConnected = false;
+  bool isConnected = (WiFi.status() == WL_CONNECTED);
 
-      if (!ntpConfigured) {
-        configTime((long)(cfgTzOffset * 3600), 0, "pool.ntp.org", "time.nist.gov");
-        ntpConfigured = true;
-      }
-      MDNS.begin("iglet");
-      MDNS.addService("http", "tcp", 80);
-      setupWebServer();
-    } else if (now - wifiConnectStart > 12000) {
-      // Timeout connecting to home WiFi: drop into offline mode smoothly
-      wifiConnecting = false;
-      Serial.println(F("WiFi connection timeout, continuing offline."));
+  if (isConnected && !wasConnected) {
+    wasConnected = true;
+    wifiConnecting = false;
+    Serial.print(F("WiFi connected! IP: "));
+    Serial.println(WiFi.localIP());
+
+    if (!ntpConfigured) {
+      configTime((long)(cfgTzOffset * 3600), 0, "pool.ntp.org", "time.nist.gov");
+      ntpConfigured = true;
     }
+    MDNS.begin("iglet");
+    MDNS.addService("http", "tcp", 80);
+    setupWebServer();
+  } else if (!isConnected && wasConnected) {
+    wasConnected = false;
+    Serial.println(F("WiFi disconnected."));
+  }
+
+  if (wifiConnecting && (now - wifiConnectStart > 15000)) {
+    wifiConnecting = false;
+    Serial.println(F("Initial WiFi connection timeout, continuing offline."));
   }
 
   // Check if NTP time just synced
@@ -489,7 +495,7 @@ void loop() {
 
   // Special birthday/anniversary celebration screen
   if (currentState == CELEBRATION_DISPLAY) {
-    if (now - celebrationStart > 5000) {
+    if (now - celebrationStart > 5000 || buttonPressed(now)) {
       currentState = MENU;
       updateDisplay();
     }
@@ -552,8 +558,8 @@ void loop() {
     updateDisplay();
   }
 
-  // Live clock refresh while in IDLE mode
-  if (currentState == IDLE && !displayOff) {
+  // Live clock refresh while in IDLE mode or in DAYS_VIEW (clock page)
+  if ((currentState == IDLE || (currentState == DAYS_VIEW && daysSubIndex == 2)) && !displayOff) {
     static unsigned long lastIdleClockTick = 0;
     if (now - lastIdleClockTick >= 1000) {
       lastIdleClockTick = now;
@@ -573,12 +579,15 @@ void loop() {
 // ============================================================================
 void startWiFiOrAP() {
   if (strlen(cfgWifiSSID) > 0) {
+    if (apModeActive) {
+      dnsServer.stop();
+      apModeActive = false;
+    }
     // We have saved Wi-Fi credentials: connect in background!
     WiFi.mode(WIFI_STA);
     WiFi.begin(cfgWifiSSID, cfgWifiPass);
     wifiConnecting = true;
     wifiConnectStart = millis();
-    apModeActive = false;
     ntpConfigured = false;
     Serial.print(F("Connecting to WiFi: "));
     Serial.println(cfgWifiSSID);
@@ -691,8 +700,9 @@ void handleRoot() {
 }
 
 void handleSave() {
-  if (server.hasArg("name")) {
+  if (server.hasArg("name") && server.arg("name").length() > 0) {
     strncpy(cfgGfName, server.arg("name").c_str(), sizeof(cfgGfName) - 1);
+    cfgGfName[sizeof(cfgGfName) - 1] = '\0';
   }
   if (server.hasArg("bm")) cfgBdayMonth = server.arg("bm").toInt();
   if (server.hasArg("bd")) cfgBdayDay = server.arg("bd").toInt();
@@ -707,9 +717,11 @@ void handleSave() {
 
   if (server.hasArg("ssid") && server.arg("ssid").length() > 0) {
     strncpy(cfgWifiSSID, server.arg("ssid").c_str(), sizeof(cfgWifiSSID) - 1);
+    cfgWifiSSID[sizeof(cfgWifiSSID) - 1] = '\0';
   }
   if (server.hasArg("pass") && server.arg("pass").length() > 0) {
     strncpy(cfgWifiPass, server.arg("pass").c_str(), sizeof(cfgWifiPass) - 1);
+    cfgWifiPass[sizeof(cfgWifiPass) - 1] = '\0';
   }
 
   if (server.hasArg("tgtoken") && server.arg("tgtoken").length() > 0) {
@@ -747,7 +759,9 @@ void handleSave() {
 void handleSendNote() {
   if (server.hasArg("l1") && server.hasArg("l2")) {
     strncpy(liveNoteLine1, server.arg("l1").c_str(), sizeof(liveNoteLine1) - 1);
+    liveNoteLine1[sizeof(liveNoteLine1) - 1] = '\0';
     strncpy(liveNoteLine2, server.arg("l2").c_str(), sizeof(liveNoteLine2) - 1);
+    liveNoteLine2[sizeof(liveNoteLine2) - 1] = '\0';
     liveNoteStart = millis();
 
     if (displayOff) {
@@ -775,6 +789,10 @@ void handleSendNote() {
 }
 
 void setupWebServer() {
+  static bool serverStarted = false;
+  if (serverStarted) return;
+  serverStarted = true;
+
   server.on("/", HTTP_GET, handleRoot);
   server.on("/save", HTTP_POST, handleSave);
   server.on("/sendnote", HTTP_POST, handleSendNote);
@@ -997,22 +1015,32 @@ void checkTelegramUpdates() {
   int textStart = textIdx + 8;
   int textEnd = -1;
   for (int i = textStart; i < (int)body.length(); i++) {
-    if (body[i] == '"' && body[i - 1] != '\\') {
-      textEnd = i;
-      break;
+    if (body[i] == '"') {
+      int backslashes = 0;
+      for (int j = i - 1; j >= textStart && body[j] == '\\'; j--) {
+        backslashes++;
+      }
+      if (backslashes % 2 == 0) {
+        textEnd = i;
+        break;
+      }
     }
   }
   if (textEnd == -1) return;
   String rawText = body.substring(textStart, textEnd);
 
-  // Unescape standard escapes
+  // Handle newlines and unescape standard JSON escapes
+  rawText.replace("\\r", "");
+  rawText.replace("\r", "");
+  rawText.replace("\\n", "|");
+  rawText.replace("\n", "|");
   rawText.replace("\\\"", "\"");
   rawText.replace("\\\\", "\\");
 
   // Commands check
   if (rawText.startsWith("/start") || rawText.startsWith("/help")) {
     sendTelegramMessage(senderChatId.c_str(),
-      "✨ Iglet Desk Companion Connected!\nSend me any love note, and it will pop up directly on " + String(cfgGfName) + "'s desk!\n\n💡 Tip: Use '|' to split into two lines:\nThinking of you | see you tonight <3\n\nWhenever she checks in her mood on Iglet, you will receive a notification right here!");
+      "✨ Iglet Desk Companion Connected!\nSend me any love note, and it will pop up directly on " + String(cfgGfName) + "'s desk!\n\n💡 Tip: Press Enter or use '|' to split into two lines:\nThinking of you\nsee you tonight <3\n\nWhenever she checks in her mood on Iglet, you will receive a notification right here!");
     return;
   }
 
