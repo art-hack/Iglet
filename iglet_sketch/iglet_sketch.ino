@@ -240,7 +240,7 @@ unsigned long lastRotaryTime = 0;
 const unsigned long rotaryDebounceDelay = 120;
 
 // ── Inactivity & Sleep ──────────────────────────────────────────────────────
-const unsigned long inactivityLimit = 5UL * 60000UL;      // 5 min to sleep (generous & comfortable)
+const unsigned long inactivityLimit = 90UL * 1000UL;       // 90s to idle desk clock
 const unsigned long displayOffTimeLimit = 30UL * 60000UL; // 30 min to display off
 unsigned long idleStartTime = 0;
 bool displayOff = false;
@@ -265,6 +265,9 @@ uint8_t currentReminderIndex = 0;
 
 // ── Feature States ──────────────────────────────────────────────────────────
 uint8_t currentNoteIndex = 0;
+
+// Wi-Fi View sub-page: 0=Status & Portal, 1=Reset Wi-Fi
+uint8_t wifiViewPage = 0;
 
 // Pet
 uint8_t petLoveLevel = 3;       // 1 to 5 hearts
@@ -549,6 +552,15 @@ void loop() {
   if (currentState == REMINDER_DISPLAY && (now - lastReminderTime > 10000)) {
     currentState = MENU;
     updateDisplay();
+  }
+
+  // Live clock refresh while in IDLE mode
+  if (currentState == IDLE && !displayOff) {
+    static unsigned long lastIdleClockTick = 0;
+    if (now - lastIdleClockTick >= 1000) {
+      lastIdleClockTick = now;
+      updateDisplay();
+    }
   }
 
   // Inputs and background handlers
@@ -1568,11 +1580,28 @@ void renderMenu() {
 
 // ── Render: Idle ────────────────────────────────────────────────────────────
 void renderIdle() {
-  display.setTextSize(1);
-  display.setCursor(16, 4);
-  display.print(DEVICE_NAME);
-  display.print(F(" is sleeping"));
-  drawPet(64, 38, 4, 0);
+  time_t now = time(nullptr);
+  if (now > 100000) {
+    struct tm* t = localtime(&now);
+    char dateBuf[24];
+    strftime(dateBuf, sizeof(dateBuf), "%a, %d %b %Y", t);
+    printCentered(dateBuf, 4, 1);
+
+    char timeBuf[10];
+    strftime(timeBuf, sizeof(timeBuf), "%H:%M", t);
+    printCentered(timeBuf, 20, 3);
+
+    // Cute footer: <3  (-.-)zzZ  <3
+    drawHeart(28, 55, 3);
+    printCentered(F("(-.-)zzZ"), 52, 1);
+    drawHeart(100, 55, 3);
+  } else {
+    display.setTextSize(1);
+    display.setCursor(16, 4);
+    display.print(DEVICE_NAME);
+    display.print(F(" is sleeping"));
+    drawPet(64, 38, 4, 0);
+  }
 }
 
 // ── Render: Virtual Pet ─────────────────────────────────────────────────────
@@ -1702,24 +1731,35 @@ void renderLiveNote() {
 
 // ── Render: Wi-Fi Portal Status ─────────────────────────────────────────────
 void renderWiFiPortal() {
-  printCentered(F("Phone Web Setup"), 4, 1);
-
-  if (WiFi.status() == WL_CONNECTED) {
-    display.setCursor(4, 18);
-    display.print(F("Connected to:"));
-    display.setCursor(4, 28);
-    display.print(cfgWifiSSID);
-    display.setCursor(4, 42);
-    display.print(F("Open on phone:"));
-    display.setCursor(4, 52);
-    display.print(F("http://iglet.local"));
+  if (wifiViewPage == 0) {
+    if (WiFi.status() == WL_CONNECTED) {
+      printCentered(F("Wi-Fi Info (1/2)"), 4, 1);
+      display.setCursor(4, 18);
+      display.print(F("Net: "));
+      display.print(cfgWifiSSID);
+      display.setCursor(4, 30);
+      display.print(F("Web: http://iglet.local"));
+      display.setCursor(4, 42);
+      display.print(F("IP:  "));
+      display.print(WiFi.localIP());
+      printCentered(F("[Click:Exit | Turn:Reset]"), 55, 1);
+    } else {
+      printCentered(F("Setup AP (1/2)"), 4, 1);
+      display.setCursor(4, 18);
+      display.print(F("1. Join: Iglet-Setup"));
+      display.setCursor(4, 32);
+      display.print(F("2. Open: 192.168.4.1"));
+      printCentered(F("[Click:Exit | Turn:Reset]"), 55, 1);
+    }
   } else {
-    display.setCursor(4, 18);
-    display.print(F("1. Join Hotspot:"));
-    printCentered(F("Iglet-Setup"), 28, 1);
-    display.setCursor(4, 42);
-    display.print(F("2. Open in browser:"));
-    printCentered(F("http://192.168.4.1"), 52, 1);
+    printCentered(F("Reset Wi-Fi? (2/2)"), 4, 1);
+    printCentered(F("Forget network &"), 18, 1);
+    printCentered(F("start Setup AP?"), 29, 1);
+    display.fillRect(4, 40, 120, 13, WHITE);
+    display.setTextColor(BLACK);
+    printCentered(F("CLICK TO RESET"), 43, 1);
+    display.setTextColor(WHITE);
+    printCentered(F("[Turn: Back]"), 55, 1);
   }
 }
 
@@ -2235,6 +2275,11 @@ void handleRotaryInput(unsigned long now) {
       updateDisplay();
       break;
 
+    case WIFI_PORTAL_VIEW:
+      wifiViewPage = (wifiViewPage + rotation + 2) % 2;
+      updateDisplay();
+      break;
+
     default:
       break;
   }
@@ -2263,12 +2308,36 @@ void handleButtonPresses(unsigned long now) {
     case COMPLIMENT_RESULT:
     case DECISION_RESULT:
     case MOOD_RESPONSE:
-    case WIFI_PORTAL_VIEW:
     case DAYS_VIEW:
       currentState = MENU;
       if (displayOff) {
         display.ssd1306_command(SSD1306_DISPLAYON);
         displayOff = false;
+      }
+      break;
+
+    case WIFI_PORTAL_VIEW:
+      if (wifiViewPage == 1) {
+        // Reset Wi-Fi network credentials only (Bot token & Chat ID remain intact!)
+        cfgWifiSSID[0] = '\0';
+        cfgWifiPass[0] = '\0';
+        saveSettings();
+
+        WiFi.disconnect();
+        startAPMode();
+        wifiViewPage = 0;
+
+        display.clearDisplay();
+        printCentered(F("Wi-Fi Reset!"), 20, 2);
+        printCentered(F("Hotspot Started"), 42, 1);
+        display.display();
+        delay(1500);
+      } else {
+        currentState = MENU;
+        if (displayOff) {
+          display.ssd1306_command(SSD1306_DISPLAYON);
+          displayOff = false;
+        }
       }
       break;
 
@@ -2445,6 +2514,7 @@ void handleMenuSelection(unsigned long now) {
       break;
 
     case 6:  // WiFi — Status / Setup Hotspot
+      wifiViewPage = 0;
       if (WiFi.status() != WL_CONNECTED && !apModeActive) {
         startAPMode();
       }

@@ -204,8 +204,9 @@ You can also customize the 20 love notes, roulette compliments, and decision mak
 | **Ask Decider** | Click in `Decide` | Plays thinking animation (`?`, `!`, `*`) and reveals answer |
 | **Breathing** | Rotate in `Breathe` | Sets cycles (1 to 20), Click starts 4-2-6 calming breathing session |
 | **Check Mood** | Rotate in `Mood` | Pick Happy, Okay, Sad, Angry, or Love face; Click for response |
-| **WiFi Status / Portal**| Click `WiFi` | Shows connection status & IP address. If offline, activates `Iglet-Setup` AP |
-| **Auto-Wake** | Rotate in `Wake` | Pick interval: `Off`, `30m`, `1 hr`, `2 hr`, `4 hr`; Click to save |
+| **WiFi Status / Reset**| Click `WiFi` | Page 1 shows IP & URL (`http://iglet.local`). Rotate to Page 2 to **Reset Wi-Fi** (starts Setup Hotspot while keeping Telegram Bot settings safe)! |
+| **Idle Desk Clock** | Auto-idle after 90s | Beautiful live digital clock with date & sleeping companion footer whenever no message is displayed! |
+| **Auto-Wake** | Rotate in `Wake` | Pick interval: `Off`, `1m`, `30m`, `1 hr`, `2 hr`, `4 hr`; Click to save |
 | **Focus Timers** | Standard Igor flow | UP (stopwatch), DOWN (countdown), POMO (Pomodoro) |
 | **Wake from Sleep** | Rotate or Click | Instantly wakes screen back to menu |
 
