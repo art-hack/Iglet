@@ -178,6 +178,7 @@ enum State {
   GREET_SELECT,
   REMINDER_DISPLAY,
   GREETING_WAKEUP,
+  GREETING_TEASER,       // Teaser for upcoming birthday/anniversary or celebration on auto-wake
   LIVE_NOTE_DISPLAY,     // Note sent live from phone!
   CELEBRATION_DISPLAY    // Birthday or Anniversary celebration!
 };
@@ -226,11 +227,16 @@ unsigned long idleStartTime = 0;
 bool displayOff = false;
 
 // ── Auto-Wake Greeting Settings ─────────────────────────────────────────────
-const uint16_t greetIntervals[] = {0, 30, 60, 120, 240};
-const char* const greetLabels[] = {"Off", "30m", "1 hr", "2 hr", "4 hr"};
-const uint8_t GREET_OPTION_COUNT = 5;
-uint8_t greetIntervalIdx = 2;  // Default: 1 hour
+const uint16_t greetIntervals[] = {0, 1, 30, 60, 120, 240};
+const char* const greetLabels[] = {"Off", "1m", "30m", "1 hr", "2 hr", "4 hr"};
+const uint8_t GREET_OPTION_COUNT = 6;
+uint8_t greetIntervalIdx = 3;  // Default: 1 hour
 unsigned long lastGreetingTime = 0;
+
+// Teaser for upcoming or today's anniversary/birthday on auto-wake
+uint8_t teaserType = 0; // 1: Bday today, 2: Anniv today, 3: Bday next week, 4: Anniv next week
+uint8_t teaserDays = 0;
+unsigned long teaserStart = 0;
 
 // ── Gentle Reminder Settings ────────────────────────────────────────────────
 bool remindersEnabled = true;
@@ -350,6 +356,7 @@ void renderWiFiPortal();
 void renderGreetSelect();
 void renderReminder();
 void renderGreeting();
+void renderGreetingTeaser();
 void renderLiveNote();
 void renderCelebration();
 
@@ -484,6 +491,13 @@ void loop() {
 
   if (currentState == DECISION_RESULT && (now - decisionAnimStart > 4500)) {
     currentState = MENU;
+    updateDisplay();
+  }
+
+  // Auto-transition from GREETING_TEASER -> GREETING_WAKEUP (Note)
+  if (currentState == GREETING_TEASER && (now - teaserStart > 4000)) {
+    currentState = GREETING_WAKEUP;
+    lastGreetingTime = now;
     updateDisplay();
   }
 
@@ -707,7 +721,7 @@ void loadSettings() {
                   ((int)EEPROM.read(EEPROM_FLOW_ADDR + 2) << 16) |
                   ((int)EEPROM.read(EEPROM_FLOW_ADDR + 3) << 24);
     greetIntervalIdx = EEPROM.read(EEPROM_GREET_ADDR);
-    if (greetIntervalIdx >= GREET_OPTION_COUNT) greetIntervalIdx = 2;
+    if (greetIntervalIdx >= GREET_OPTION_COUNT) greetIntervalIdx = 3;
     remindersEnabled = EEPROM.read(EEPROM_REMIND_ADDR) != 0;
     petLoveLevel     = EEPROM.read(EEPROM_PET_ADDR);
     if (petLoveLevel > 5 || petLoveLevel == 0) petLoveLevel = 3;
@@ -1119,6 +1133,9 @@ void updateDisplay() {
     case REMINDER_DISPLAY:
       renderReminder();
       break;
+    case GREETING_TEASER:
+      renderGreetingTeaser();
+      break;
     case GREETING_WAKEUP:
       renderGreeting();
       break;
@@ -1437,6 +1454,41 @@ void renderGreeting() {
   renderLoveNote();
 }
 
+// ── Render: Auto-Wake Teaser / Celebration ──────────────────────────────────
+void renderGreetingTeaser() {
+  if (teaserType == 1) {
+    // Birthday today!
+    printCentered(F("HAPPY BIRTHDAY! <3"), 4, 1);
+    drawCake(64, 34);
+    printCentered(String(cfgGfName) + "!", 48, 2);
+  } else if (teaserType == 2) {
+    // Anniversary today!
+    printCentered(F("HAPPY ANNIVERSARY! <3"), 4, 1);
+    drawHeart(64, 32, 14);
+    printCentered(F("Forever & Always <3"), 50, 1);
+  } else if (teaserType == 3) {
+    // Birthday in next week!
+    printCentered(F("Who's Birthday is"), 8, 1);
+    if (teaserDays == 1) {
+      printCentered(F("TOMORROW!"), 24, 2);
+    } else {
+      String dStr = "in " + String(teaserDays) + " days?!";
+      printCentered(dStr, 24, 2);
+    }
+    printCentered(String(cfgGfName) + F("! <3"), 46, 2);
+  } else if (teaserType == 4) {
+    // Anniversary in next week!
+    printCentered(F("Our Anniversary is"), 8, 1);
+    if (teaserDays == 1) {
+      printCentered(F("TOMORROW! <3"), 24, 2);
+    } else {
+      String dStr = "in " + String(teaserDays) + " days!";
+      printCentered(dStr, 24, 2);
+    }
+    printCentered(F("Counting down! <3"), 48, 1);
+  }
+}
+
 // ============================================================================
 //  ANIMATION HANDLERS
 // ============================================================================
@@ -1571,7 +1623,34 @@ void handleAutoGreeting(unsigned long now) {
       displayOff = false;
     }
 
-    currentState = GREETING_WAKEUP;
+    // Check if Anniversary or Birthday is TODAY or in the next week (<= 7 days)!
+    int bDays = getDaysUntil(cfgBdayMonth, cfgBdayDay);
+    int aDays = getDaysUntil(cfgAnnivMonth, cfgAnnivDay);
+
+    if (bDays == 0) {
+      teaserType = 1; // Birthday today!
+      teaserDays = 0;
+      teaserStart = now;
+      currentState = GREETING_TEASER;
+    } else if (aDays == 0) {
+      teaserType = 2; // Anniversary today!
+      teaserDays = 0;
+      teaserStart = now;
+      currentState = GREETING_TEASER;
+    } else if (bDays >= 1 && bDays <= 7 && (aDays < 1 || bDays <= aDays)) {
+      teaserType = 3; // Birthday in the next week!
+      teaserDays = bDays;
+      teaserStart = now;
+      currentState = GREETING_TEASER;
+    } else if (aDays >= 1 && aDays <= 7) {
+      teaserType = 4; // Anniversary in the next week!
+      teaserDays = aDays;
+      teaserStart = now;
+      currentState = GREETING_TEASER;
+    } else {
+      currentState = GREETING_WAKEUP;
+    }
+
     lastActivityTime = now;
     updateDisplay();
   }
@@ -1725,6 +1804,15 @@ void handleButtonPresses(unsigned long now) {
   switch (currentState) {
     case MENU:
       handleMenuSelection(now);
+      break;
+
+    case GREETING_TEASER:
+      currentState = GREETING_WAKEUP;
+      lastGreetingTime = now;
+      if (displayOff) {
+        display.ssd1306_command(SSD1306_DISPLAYON);
+        displayOff = false;
+      }
       break;
 
     case IDLE:
