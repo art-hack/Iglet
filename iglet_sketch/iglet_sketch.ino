@@ -1025,40 +1025,49 @@ void drawMoodFace(uint8_t mood, int cx, int cy, int r) {
   int eyeSpacing = r / 2;
 
   switch (mood) {
-    case 0: // Happy
+    case 0: // Happy (Curved smile UP at corners + blush)
       display.fillCircle(cx - eyeSpacing, eyeY, 2, WHITE);
       display.fillCircle(cx + eyeSpacing, eyeY, 2, WHITE);
-      for (int i = -eyeSpacing; i <= eyeSpacing; i++) {
-        display.drawPixel(cx + i, cy + r / 4 + (i * i) / (r * 2), WHITE);
+      display.drawPixel(cx - 7, cy + 1, WHITE);
+      display.drawPixel(cx + 7, cy + 1, WHITE);
+      for (int i = -5; i <= 5; i++) {
+        display.drawPixel(cx + i, cy + 6 - (i * i) / 5, WHITE);
       }
       break;
-    case 1: // Okay
+
+    case 1: // Okay (Straight neutral line)
       display.fillCircle(cx - eyeSpacing, eyeY, 2, WHITE);
       display.fillCircle(cx + eyeSpacing, eyeY, 2, WHITE);
-      display.drawLine(cx - eyeSpacing, cy + r / 4, cx + eyeSpacing, cy + r / 4, WHITE);
+      display.drawLine(cx - 4, cy + 4, cx + 4, cy + 4, WHITE);
       break;
-    case 2: // Sad
+
+    case 2: // Sad (Frown DOWN at corners + teardrop)
       display.fillCircle(cx - eyeSpacing, eyeY, 2, WHITE);
       display.fillCircle(cx + eyeSpacing, eyeY, 2, WHITE);
-      for (int i = -eyeSpacing; i <= eyeSpacing; i++) {
-        display.drawPixel(cx + i, cy + r / 2 - (i * i) / (r * 2), WHITE);
+      display.drawPixel(cx + 6, cy, WHITE);     // Teardrop
+      display.drawPixel(cx + 6, cy + 1, WHITE);
+      for (int i = -5; i <= 5; i++) {
+        display.drawPixel(cx + i, cy + 2 + (i * i) / 5, WHITE);
       }
       break;
-    case 3: // Angry
-      display.drawLine(cx - eyeSpacing - 2, eyeY - 4, cx - eyeSpacing + 2, eyeY - 2, WHITE);
-      display.drawLine(cx + eyeSpacing + 2, eyeY - 4, cx + eyeSpacing - 2, eyeY - 2, WHITE);
-      display.fillCircle(cx - eyeSpacing, eyeY, 2, WHITE);
-      display.fillCircle(cx + eyeSpacing, eyeY, 2, WHITE);
-      for (int i = -eyeSpacing; i <= eyeSpacing; i++) {
-        display.drawPixel(cx + i, cy + r / 2 - (i * i) / (r * 2), WHITE);
+
+    case 3: // Angry (Slanted eyebrows + angry mouth)
+      display.drawLine(cx - 7, eyeY - 4, cx - 2, eyeY - 2, WHITE);
+      display.drawLine(cx + 7, eyeY - 4, cx + 2, eyeY - 2, WHITE);
+      display.fillCircle(cx - 5, eyeY, 2, WHITE);
+      display.fillCircle(cx + 5, eyeY, 2, WHITE);
+      for (int i = -4; i <= 4; i++) {
+        display.drawPixel(cx + i, cy + 3 + (i * i) / 4, WHITE);
       }
       break;
-    case 4: // Love
-      drawHeart(cx - eyeSpacing, eyeY, 4);
-      drawHeart(cx + eyeSpacing, eyeY, 4);
-      for (int i = -eyeSpacing; i <= eyeSpacing; i++) {
-        display.drawPixel(cx + i, cy + r / 4 + (i * i) / r, WHITE);
+
+    case 4: // Love (Heart eyes + happy smile!)
+      drawHeart(cx - eyeSpacing, eyeY - 1, 4);
+      drawHeart(cx + eyeSpacing, eyeY - 1, 4);
+      for (int i = -5; i <= 5; i++) {
+        display.drawPixel(cx + i, cy + 5 - (i * i) / 5, WHITE);
       }
+      display.drawPixel(cx, cy + 6, WHITE);
       break;
   }
 }
@@ -1386,7 +1395,11 @@ void renderLoveNote() {
 
 // ── Render: Compliment ──────────────────────────────────────────────────────
 void renderCompliment() {
-  printCentered(F("Spin me!"), 4, 1);
+  if (currentState == COMPLIMENT_RESULT) {
+    printCentered(F("You're"), 6, 1);
+  } else {
+    printCentered(F("Spinning... *"), 6, 1);
+  }
 
   const char* comp = compliments[rouletteIndex % COMPLIMENT_COUNT];
   printCentered(comp, 26, 3);
@@ -1679,18 +1692,65 @@ void handleReminders(unsigned long now) {
 //  INPUT HANDLING
 // ============================================================================
 int getRotation() {
-  static int previousCLK = digitalRead(CLK);
-  int currentCLK = digitalRead(CLK);
+  static uint8_t prev = 0xFF;
+  static int8_t count = 0;
+  static unsigned long lastTurnTime = 0;
 
-  if (currentCLK == LOW && previousCLK == HIGH &&
-      (millis() - lastRotaryTime > rotaryDebounceDelay)) {
-    lastRotaryTime = millis();
-    int DTValue = digitalRead(DT);
-    previousCLK = currentCLK;
-    return (DTValue != currentCLK) ? 1 : -1;
+  // Diagnostic tracking to alert user if DT wire is disconnected / loose on D7
+  static uint16_t clkTransitions = 0;
+  static uint16_t dtTransitions = 0;
+  static uint8_t lastClk = 1, lastDt = 1;
+
+  uint8_t clk = digitalRead(CLK);
+  uint8_t dt  = digitalRead(DT);
+
+  if (clk != lastClk) { clkTransitions++; lastClk = clk; }
+  if (dt != lastDt)   { dtTransitions++;  lastDt = dt;   }
+
+  static unsigned long lastDiagTime = 0;
+  if (millis() - lastDiagTime > 3000) {
+    lastDiagTime = millis();
+    if (clkTransitions > 10 && dtTransitions == 0) {
+      Serial.println(F("[ROTARY WARNING] CLK toggled but DT is stuck HIGH! Check if DT jumper is firmly connected to D7!"));
+    }
   }
 
-  previousCLK = currentCLK;
+  uint8_t curr = (clk << 1) | dt;
+
+  if (prev == 0xFF) {
+    prev = curr;
+    return 0;
+  }
+
+  if (curr != prev) {
+    uint8_t idx = (prev << 2) | curr;
+    prev = curr;
+
+    // Full 16-state Gray code transition lookup
+    static const int8_t encTable[16] = {
+      0, -1,  1,  0,
+      1,  0,  0, -1,
+     -1,  0,  0,  1,
+      0,  1, -1,  0
+    };
+
+    int8_t step = encTable[idx];
+    if (step != 0) {
+      count += step;
+
+      // When settled into detent (curr == 3 or curr == 0)
+      if ((curr == 3 || curr == 0) && (count >= 2 || count <= -2)) {
+        int result = (count > 0) ? 1 : -1;
+        count = 0;
+
+        unsigned long now = millis();
+        if (now - lastTurnTime > 50) {
+          lastTurnTime = now;
+          return result;
+        }
+      }
+    }
+  }
   return 0;
 }
 
@@ -1771,10 +1831,13 @@ void handleRotaryInput(unsigned long now) {
       break;
 
     case COMPLIMENT_ROULETTE:
+    case COMPLIMENT_RESULT:
       if (!rouletteSpinning) {
+        rngState ^= (uint16_t)millis() ^ (uint16_t)analogRead(A0);
         rouletteSpinning = true;
         rouletteLastSpin = millis();
         rouletteIndex = cheapRandom(COMPLIMENT_COUNT);
+        currentState = COMPLIMENT_ROULETTE;
       }
       break;
 
@@ -1977,8 +2040,10 @@ void handleMenuSelection(unsigned long now) {
       break;
 
     case 2:  // Spin! — Compliment roulette
-      rouletteSpinning = false;
-      rouletteIndex = 0;
+      rngState ^= (uint16_t)millis() ^ (uint16_t)analogRead(A0);
+      rouletteSpinning = true;
+      rouletteLastSpin = now;
+      rouletteIndex = cheapRandom(COMPLIMENT_COUNT);
       currentState = COMPLIMENT_ROULETTE;
       break;
 
