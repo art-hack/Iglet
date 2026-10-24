@@ -24,6 +24,7 @@
 // ============================================================================
 
 #include <ESP8266WiFi.h>
+#include <WiFiClientSecure.h>
 #include <ESP8266WebServer.h>
 #include <DNSServer.h>
 #include <ESP8266mDNS.h>
@@ -97,6 +98,14 @@ Adafruit_SSD1306 display(128, 64, &Wire, -1);
   const uint8_t ORACLE_COUNT = 16;
 #endif
 
+// Fallbacks if not defined in config.h
+#ifndef TELEGRAM_BOT_TOKEN
+  #define TELEGRAM_BOT_TOKEN ""
+#endif
+#ifndef TELEGRAM_CHAT_ID
+  #define TELEGRAM_CHAT_ID   ""
+#endif
+
 // ── Gentle Reminders ────────────────────────────────────────────────────────
 const char* const reminderMsgs[] = {
   "Drink",        "water! :)",    "---",
@@ -130,6 +139,12 @@ uint8_t cfgBdayDay        = GF_BIRTHDAY_DAY;
 uint8_t cfgAnnivMonth     = ANNIVERSARY_MONTH;
 uint8_t cfgAnnivDay       = ANNIVERSARY_DAY;
 float cfgTzOffset         = TIMEZONE_OFFSET_HRS;
+char cfgTelegramToken[80] = TELEGRAM_BOT_TOKEN;
+char cfgTelegramChatId[32]= TELEGRAM_CHAT_ID;
+unsigned long lastTelegramPoll = 0;
+const unsigned long telegramPollInterval = 3500;
+long lastTelegramUpdateId = 0;
+bool telegramInitialized = false;
 
 // ============================================================================
 //  WEB SERVER & NETWORKING
@@ -301,10 +316,12 @@ unsigned long celebrationStart = 0;
 #define EEPROM_ANN_D_ADDR  12    // 1 byte
 #define EEPROM_TZ_ADDR     13    // 1 byte (signed int8_t: hours * 2)
 #define EEPROM_NAME_ADDR   16    // 32 bytes (char string)
-#define EEPROM_SSID_ADDR   48    // 64 bytes (char string)
-#define EEPROM_PASS_ADDR   112   // 64 bytes (char string)
-#define EEPROM_MAGIC_A     0xAC
-#define EEPROM_MAGIC_B     0xE3
+#define EEPROM_SSID_ADDR     48    // 64 bytes (char string)
+#define EEPROM_PASS_ADDR     112   // 64 bytes (char string)
+#define EEPROM_TG_TOKEN_ADDR 176   // 80 bytes (char string)
+#define EEPROM_TG_CHAT_ADDR  256   // 32 bytes (char string)
+#define EEPROM_MAGIC_A       0xAC
+#define EEPROM_MAGIC_B       0xE3
 
 // ============================================================================
 //  FORWARD DECLARATIONS
@@ -313,6 +330,10 @@ void updateDisplay();
 void successAnimation();
 int  getRotation();
 bool buttonPressed(unsigned long now);
+bool sendTelegramMessage(const char* chatId, const String& text);
+void sendTelegramMood(uint8_t mood);
+void checkTelegramUpdates();
+String sanitizeForOLED(const String& input);
 void handleRotaryInput(unsigned long now);
 void handleButtonPresses(unsigned long now);
 void handleMenuSelection(unsigned long now);
@@ -411,6 +432,13 @@ void loop() {
   }
   server.handleClient();
   MDNS.update();
+
+  // Check background Telegram Bot updates (only if connected, token provided, and user is not actively twisting rotary dial)
+  if (WiFi.status() == WL_CONNECTED && strlen(cfgTelegramToken) > 10) {
+    if (now - lastActivityTime > 2500) {
+      checkTelegramUpdates();
+    }
+  }
 
   // Check background Wi-Fi connection
   if (wifiConnecting) {
@@ -621,6 +649,16 @@ void handleRoot() {
   html += F("' placeholder='Home Wi-Fi'>"
             "<label>Wi-Fi Password</label>"
             "<input type='password' name='pass' placeholder='Leave blank if unchanged'>"
+            "<h2>🤖 Telegram Remote Bot</h2>"
+            "<label>Bot Token (from @BotFather)</label>"
+            "<input type='text' name='tgtoken' value='");
+  html += String(cfgTelegramToken);
+  html += F("' placeholder='e.g. 123456:ABC-DEF1234ghIkl-zyx57W2v1u'>"
+            "<label>Your Chat ID (auto-detected on 1st message or @userinfobot)</label>"
+            "<input type='text' name='tgchat' value='");
+  html += String(cfgTelegramChatId);
+  html += F("' placeholder='e.g. 987654321'>"
+            "<p style='font-size:12px;color:#666;margin:4px 0 10px;'>💡 Message your bot to pop up notes on her desk! When she logs her mood, you receive a Telegram ping back.</p>"
             "<button type='submit'>Save & Connect ✨</button></form></div></body></html>");
 
   server.send(200, "text/html", html);
@@ -646,6 +684,15 @@ void handleSave() {
   }
   if (server.hasArg("pass") && server.arg("pass").length() > 0) {
     strncpy(cfgWifiPass, server.arg("pass").c_str(), sizeof(cfgWifiPass) - 1);
+  }
+
+  if (server.hasArg("tgtoken")) {
+    strncpy(cfgTelegramToken, server.arg("tgtoken").c_str(), sizeof(cfgTelegramToken) - 1);
+    cfgTelegramToken[sizeof(cfgTelegramToken) - 1] = '\0';
+  }
+  if (server.hasArg("tgchat")) {
+    strncpy(cfgTelegramChatId, server.arg("tgchat").c_str(), sizeof(cfgTelegramChatId) - 1);
+    cfgTelegramChatId[sizeof(cfgTelegramChatId) - 1] = '\0';
   }
 
   saveSettings();
@@ -710,6 +757,288 @@ void setupWebServer() {
 }
 
 // ============================================================================
+//  TELEGRAM BOT INTEGRATION
+// ============================================================================
+
+String sanitizeForOLED(const String& input) {
+  String s = input;
+  // Replace heart symbols with <3
+  s.replace("\xE2\x9D\xA4", "<3"); // ❤️
+  s.replace("\xF0\x9F\x92\x96", "<3"); // 💖
+  s.replace("\xF0\x9F\x92\x95", "<3"); // 💕
+  s.replace("\xF0\x9F\x92\x97", "<3"); // 💗
+  s.replace("\xF0\x9F\x92\x93", "<3"); // 💓
+  s.replace("\xF0\x9F\x92\x8C", "<3"); // 💌
+  // Replace smiley emojis
+  s.replace("\xF0\x9F\x98\x8A", ":)"); // 😊
+  s.replace("\xF0\x9F\x98\x80", ":)"); // 😀
+  s.replace("\xF0\x9F\x99\x82", ":)"); // 🙂
+  s.replace("\xF0\x9F\x98\x8D", "<3"); // 😍
+  s.replace("\xF0\x9F\xA5\xB0", "<3"); // 🥰
+  s.replace("\xF0\x9F\x98\x98", ":*"); // 😘
+  s.replace("\xF0\x9F\x98\x94", ":("); // 😔
+  s.replace("\xF0\x9F\xA5\xBA", ":("); // 🥺
+  s.replace("\xF0\x9F\x98\xA2", ":("); // 😢
+  s.replace("\xF0\x9F\x98\xA1", ">:("); // 😡
+
+  // Strip remaining non-ASCII or control characters
+  String clean = "";
+  clean.reserve(s.length());
+  for (size_t i = 0; i < s.length(); i++) {
+    uint8_t b = (uint8_t)s[i];
+    if (b >= 32 && b <= 126) {
+      clean += (char)b;
+    } else if (b == '\n') {
+      clean += ' ';
+    }
+  }
+  clean.trim();
+  return clean;
+}
+
+String jsonEscape(const String& str) {
+  String out = "";
+  out.reserve(str.length() + 8);
+  for (size_t i = 0; i < str.length(); i++) {
+    char c = str[i];
+    if (c == '"') out += "\\\"";
+    else if (c == '\\') out += "\\\\";
+    else if (c == '\n') out += "\\n";
+    else if (c == '\r') continue;
+    else out += c;
+  }
+  return out;
+}
+
+bool sendTelegramMessage(const char* chatId, const String& text) {
+  if (WiFi.status() != WL_CONNECTED || strlen(cfgTelegramToken) < 10) return false;
+  if (chatId == nullptr || strlen(chatId) == 0) return false;
+
+  WiFiClientSecure client;
+  client.setInsecure();
+  client.setBufferSizes(512, 1024);
+  client.setTimeout(3500);
+
+  if (!client.connect("api.telegram.org", 443)) {
+    Serial.println(F("[Telegram] Send connect failed"));
+    return false;
+  }
+
+  String payload = "{\"chat_id\":\"" + String(chatId) + "\",\"text\":\"" + jsonEscape(text) + "\"}";
+
+  String req = "POST /bot" + String(cfgTelegramToken) + "/sendMessage HTTP/1.1\r\n";
+  req += "Host: api.telegram.org\r\n";
+  req += "Content-Type: application/json\r\n";
+  req += "Content-Length: " + String(payload.length()) + "\r\n";
+  req += "Connection: close\r\n\r\n";
+  req += payload;
+
+  client.print(req);
+
+  unsigned long t = millis();
+  while (client.connected() && millis() - t < 2500) {
+    if (client.available()) {
+      String line = client.readStringUntil('\n');
+      if (line.startsWith("HTTP/1.1 200 OK")) {
+        Serial.println(F("[Telegram] Message sent successfully."));
+        client.stop();
+        return true;
+      }
+    }
+    yield();
+  }
+  client.stop();
+  return true;
+}
+
+void sendTelegramMood(uint8_t mood) {
+  if (strlen(cfgTelegramChatId) == 0) return;
+  if (mood >= MOOD_COUNT) return;
+
+  const char* emojis[] = {"😊", "🙂", "🥺", "😤", "🥰"};
+  String text = "🎀 " + String(cfgGfName) + " just checked in on Iglet!\n";
+  text += "Mood: " + String(moodLabels[mood]) + " " + emojis[mood] + "\n";
+  text += "Iglet replied: \"" + String(moodResponses[mood][0]) + " " + String(moodResponses[mood][1]) + "\"";
+
+  sendTelegramMessage(cfgTelegramChatId, text);
+}
+
+void checkTelegramUpdates() {
+  if (WiFi.status() != WL_CONNECTED) return;
+  if (strlen(cfgTelegramToken) < 10) return;
+
+  unsigned long now = millis();
+  if (now - lastTelegramPoll < telegramPollInterval) return;
+  lastTelegramPoll = now;
+
+  WiFiClientSecure client;
+  client.setInsecure();
+  client.setBufferSizes(1024, 256);
+  client.setTimeout(2500);
+
+  if (!client.connect("api.telegram.org", 443)) {
+    return;
+  }
+
+  // On first boot, get the latest offset so we ignore stale messages sent while offline
+  String url = "/bot" + String(cfgTelegramToken) + "/getUpdates?limit=1&timeout=0";
+  if (!telegramInitialized) {
+    url += "&offset=-1";
+  } else if (lastTelegramUpdateId > 0) {
+    url += "&offset=" + String(lastTelegramUpdateId + 1);
+  }
+
+  client.print(String("GET ") + url + " HTTP/1.1\r\n" +
+               "Host: api.telegram.org\r\n" +
+               "Connection: close\r\n\r\n");
+
+  unsigned long tStart = millis();
+  while (!client.available() && millis() - tStart < 2000) {
+    delay(10);
+  }
+
+  if (!client.available()) {
+    client.stop();
+    return;
+  }
+
+  if (!client.find("\r\n\r\n")) {
+    client.stop();
+    return;
+  }
+
+  String body = client.readString();
+  client.stop();
+
+  if (!body.startsWith("{\"ok\":true")) return;
+
+  int upIdx = body.indexOf("\"update_id\":");
+  if (upIdx == -1) {
+    if (!telegramInitialized) telegramInitialized = true;
+    return;
+  }
+
+  int upEnd = body.indexOf(',', upIdx);
+  if (upEnd == -1) upEnd = body.indexOf('}', upIdx);
+  long updateId = body.substring(upIdx + 12, upEnd).toInt();
+  if (updateId > 0) {
+    lastTelegramUpdateId = updateId;
+  }
+
+  // If this was just the initial flush to sync offset, don't display stale message
+  if (!telegramInitialized) {
+    telegramInitialized = true;
+    Serial.print(F("[Telegram] Initialized at updateId: "));
+    Serial.println(lastTelegramUpdateId);
+    return;
+  }
+
+  // Extract chat id
+  int chatIdx = body.indexOf("\"chat\":{\"id\":");
+  String senderChatId = "";
+  if (chatIdx != -1) {
+    int chatEnd = body.indexOf(',', chatIdx + 13);
+    senderChatId = body.substring(chatIdx + 13, chatEnd);
+    senderChatId.trim();
+  }
+
+  // Auto-link chat ID if not configured yet!
+  if (strlen(cfgTelegramChatId) == 0 && senderChatId.length() > 0) {
+    strncpy(cfgTelegramChatId, senderChatId.c_str(), sizeof(cfgTelegramChatId) - 1);
+    cfgTelegramChatId[sizeof(cfgTelegramChatId) - 1] = '\0';
+    saveSettings();
+    Serial.print(F("[Telegram] Auto-linked Chat ID: "));
+    Serial.println(cfgTelegramChatId);
+    sendTelegramMessage(cfgTelegramChatId, "🎉 Successfully paired with Iglet!\nI have saved your Chat ID (" + senderChatId + "). Send any message to display it on " + String(cfgGfName) + "'s desk screen!");
+    return;
+  } else if (strlen(cfgTelegramChatId) > 0 && senderChatId != String(cfgTelegramChatId)) {
+    // Ignore messages from other chats
+    return;
+  }
+
+  // Extract message text
+  int textIdx = body.indexOf("\"text\":\"");
+  if (textIdx == -1) return;
+  int textStart = textIdx + 8;
+  int textEnd = -1;
+  for (int i = textStart; i < (int)body.length(); i++) {
+    if (body[i] == '"' && body[i - 1] != '\\') {
+      textEnd = i;
+      break;
+    }
+  }
+  if (textEnd == -1) return;
+  String rawText = body.substring(textStart, textEnd);
+
+  // Unescape standard escapes
+  rawText.replace("\\\"", "\"");
+  rawText.replace("\\\\", "\\");
+
+  // Commands check
+  if (rawText.startsWith("/start") || rawText.startsWith("/help")) {
+    sendTelegramMessage(senderChatId.c_str(),
+      "✨ Iglet Desk Companion Connected!\nSend me any love note, and it will pop up directly on " + String(cfgGfName) + "'s desk!\n\n💡 Tip: Use '|' to split into two lines:\nThinking of you | see you tonight <3\n\nWhenever she checks in her mood on Iglet, you will receive a notification right here!");
+    return;
+  }
+
+  // Sanitize text for 128x64 OLED (converts emojis like ❤️ -> <3, 😊 -> :))
+  String cleanText = sanitizeForOLED(rawText);
+  if (cleanText.length() == 0) return;
+
+  // Split into line1 and line2
+  String l1 = "";
+  String l2 = "";
+
+  if (cleanText.indexOf('|') != -1) {
+    int pipe = cleanText.indexOf('|');
+    l1 = cleanText.substring(0, pipe);
+    l2 = cleanText.substring(pipe + 1);
+  } else if (cleanText.length() > 10) {
+    // Find space near middle
+    int mid = cleanText.length() / 2;
+    int splitAt = -1;
+    for (int d = 0; d < 6; d++) {
+      if (mid - d > 0 && cleanText[mid - d] == ' ') { splitAt = mid - d; break; }
+      if (mid + d < (int)cleanText.length() && cleanText[mid + d] == ' ') { splitAt = mid + d; break; }
+    }
+    if (splitAt != -1) {
+      l1 = cleanText.substring(0, splitAt);
+      l2 = cleanText.substring(splitAt + 1);
+    } else {
+      l1 = cleanText.substring(0, 10);
+      l2 = cleanText.substring(10);
+    }
+  } else {
+    l1 = cleanText;
+    l2 = "";
+  }
+
+  l1.trim();
+  l2.trim();
+
+  strncpy(liveNoteLine1, l1.c_str(), sizeof(liveNoteLine1) - 1);
+  liveNoteLine1[sizeof(liveNoteLine1) - 1] = '\0';
+  strncpy(liveNoteLine2, l2.c_str(), sizeof(liveNoteLine2) - 1);
+  liveNoteLine2[sizeof(liveNoteLine2) - 1] = '\0';
+
+  liveNoteStart = millis();
+  if (displayOff) {
+    display.ssd1306_command(SSD1306_DISPLAYON);
+    displayOff = false;
+  }
+  currentState = LIVE_NOTE_DISPLAY;
+  lastActivityTime = millis();
+  buttonIgnoreUntil = millis() + 1500;
+  updateDisplay();
+
+  // Send confirmation back to Telegram
+  String reply = "💖 Delivered to " + String(cfgGfName) + "'s desk!\n\"" + l1;
+  if (l2.length() > 0) reply += " " + l2;
+  reply += "\"";
+  sendTelegramMessage(senderChatId.c_str(), reply);
+}
+
+// ============================================================================
 //  EEPROM STORAGE
 // ============================================================================
 void loadSettings() {
@@ -743,6 +1072,23 @@ void loadSettings() {
     for (int i = 0; i < 63; i++) cfgWifiPass[i] = (char)EEPROM.read(EEPROM_PASS_ADDR + i);
     cfgWifiPass[63] = '\0';
 
+    for (int i = 0; i < 79; i++) cfgTelegramToken[i] = (char)EEPROM.read(EEPROM_TG_TOKEN_ADDR + i);
+    cfgTelegramToken[79] = '\0';
+    if ((uint8_t)cfgTelegramToken[0] == 0xFF) cfgTelegramToken[0] = '\0';
+
+    for (int i = 0; i < 31; i++) cfgTelegramChatId[i] = (char)EEPROM.read(EEPROM_TG_CHAT_ADDR + i);
+    cfgTelegramChatId[31] = '\0';
+    if ((uint8_t)cfgTelegramChatId[0] == 0xFF) cfgTelegramChatId[0] = '\0';
+
+    if (strlen(cfgTelegramToken) == 0 && strlen(TELEGRAM_BOT_TOKEN) > 0) {
+      strncpy(cfgTelegramToken, TELEGRAM_BOT_TOKEN, sizeof(cfgTelegramToken) - 1);
+      cfgTelegramToken[sizeof(cfgTelegramToken) - 1] = '\0';
+    }
+    if (strlen(cfgTelegramChatId) == 0 && strlen(TELEGRAM_CHAT_ID) > 0) {
+      strncpy(cfgTelegramChatId, TELEGRAM_CHAT_ID, sizeof(cfgTelegramChatId) - 1);
+      cfgTelegramChatId[sizeof(cfgTelegramChatId) - 1] = '\0';
+    }
+
     Serial.println(F("Settings loaded from EEPROM."));
   } else {
     Serial.println(F("No EEPROM magic, initializing defaults."));
@@ -772,6 +1118,8 @@ void saveSettings() {
   for (int i = 0; i < 31; i++) EEPROM.write(EEPROM_NAME_ADDR + i, cfgGfName[i]);
   for (int i = 0; i < 63; i++) EEPROM.write(EEPROM_SSID_ADDR + i, cfgWifiSSID[i]);
   for (int i = 0; i < 63; i++) EEPROM.write(EEPROM_PASS_ADDR + i, cfgWifiPass[i]);
+  for (int i = 0; i < 79; i++) EEPROM.write(EEPROM_TG_TOKEN_ADDR + i, cfgTelegramToken[i]);
+  for (int i = 0; i < 31; i++) EEPROM.write(EEPROM_TG_CHAT_ADDR + i, cfgTelegramChatId[i]);
 
   EEPROM.commit();
   Serial.println(F("Settings saved to EEPROM."));
@@ -1959,6 +2307,8 @@ void handleButtonPresses(unsigned long now) {
     case MOOD_SELECT:
       currentState = MOOD_RESPONSE;
       moodResponseStart = now;
+      updateDisplay();
+      sendTelegramMood(moodSelection);
       break;
 
     case GREET_SELECT:

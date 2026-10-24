@@ -23,6 +23,13 @@
 #define GF_BIRTHDAY_MONTH   0          // Month (1-12)
 #define GF_BIRTHDAY_DAY     0          // Day (1-31)
 
+// ── Telegram Bot Integration ────────────────────────────────────────────────
+// 1. Create a bot in 30 seconds: message @BotFather on Telegram -> /newbot
+// 2. Paste your bot token below (or configure wirelessly via the phone portal!)
+// 3. Find your Chat ID: message @userinfobot on Telegram
+#define TELEGRAM_BOT_TOKEN  ""         // e.g. "123456789:ABCdefGhIJKlmNoPQRsTUVwxyZ_1234567"
+#define TELEGRAM_CHAT_ID    ""         // e.g. "987654321"
+
 // ── Love Notes: 20 personal messages ────────────────────────────────────────
 // Stored as triplets: line1 (yellow zone), line2 (blue zone), separator "---"
 // Tip: Keep line1 and line2 under ~10 characters each for large crisp text.

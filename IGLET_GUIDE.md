@@ -19,11 +19,37 @@
 7. 🎰 **Compliment Roulette (`Spin!`)**: Spin the dial or click to roll a slot-machine-style compliment with deceleration and sparkle hearts.
 8. 🔮 **Decision Maker (`Decide`)**: Magic 8-Ball decider for dates, food, or silly dilemmas ("Should we get bubble tea?"). Rapid animated thinking then reveals an answer.
 9. 🫁 **Calm Breathing Exercise (`Breathe`)**: 4-2-6 calming breathing session with a smooth pulsing circle animation. Configurable cycles (1 to 20).
-10. 😊 **Mood Check-in (`Mood`)**: Rotate through 5 cute pixel faces (Happy, Okay, Sad, Angry, Love) to receive a warm, tailored comforting message.
-11. ⏰ **Auto-Wake Greeting (`Wake`)**: Configurable interval (`Off`, `30m`, `1 hr`, `2 hr`, `4 hr`) that wakes up the screen, shows a random love note, and sleeps again. Persists in EEPROM!
-12. 💧 **Gentle Reminders**: Periodic reminders every 45 min ("Drink water!", "Stretch break!", "Deep breath in", "You are amazing <3", "Look up & blink", "Stand up & shake it!").
-13. 💤 **Sleepy Pet Idle**: When inactive for 2 minutes, your pet curls up asleep `(-.-)zzZ` on screen! Display turns off after 30 minutes to conserve power.
-14. ⏱️ **Focus Partner Timers (`UP`, `DOWN`, `POMO`, `Reset`)**: Original count-up stopwatch, countdown timer with rotary duration selection, Pomodoro focus/rest cycles, and total flow minutes tracking saved to EEPROM.
+10. 😊 **Mood Check-in (`Mood`)**: Rotate through 5 cute pixel faces (Happy, Okay, Sad, Angry, Love) to receive a warm, comforting response on screen — **AND it automatically sends a Telegram notification to your phone!**
+11. 🤖 **Two-Way Telegram Bot**: Send messages to your Telegram bot from anywhere in the world and they appear live on Iglet's OLED desk screen! When she checks in her mood on Iglet, you instantly get a message back on Telegram.
+12. ⏰ **Auto-Wake Greeting (`Wake`)**: Configurable interval (`Off`, `1m`, `30m`, `1 hr`, `2 hr`, `4 hr`) that wakes up the screen, shows a teaser for upcoming events, displays a random love note, and sleeps again. Persists in EEPROM!
+13. 💧 **Gentle Reminders**: Periodic reminders every 45 min ("Drink water!", "Stretch break!", "Deep breath in", "You are amazing <3", "Look up & blink", "Stand up & shake it!").
+14. 💤 **Sleepy Pet Idle**: When inactive for 2 minutes, your pet curls up asleep `(-.-)zzZ` on screen! Display turns off after 30 minutes to conserve power.
+15. ⏱️ **Focus Partner Timers (`UP`, `DOWN`, `POMO`, `Reset`)**: Original count-up stopwatch, countdown timer with rotary duration selection, Pomodoro focus/rest cycles, and total flow minutes tracking saved to EEPROM.
+
+---
+
+## 🤖 Two-Way Telegram Bot Integration (Anywhere in the World!)
+
+You don't need to be on the same Wi-Fi network to interact with Iglet! With Telegram integration:
+1. **Send Love Notes from Anywhere**: Type a message to your Telegram bot from your phone while at work, commuting, or traveling. Iglet wakes up the OLED display on her desk and shows your message until she clicks to dismiss!
+2. **Instant Mood Notifications**: When she spins the dial to `Mood` and selects how she is feeling, Iglet immediately pings your Telegram with her mood, emoji, and Iglet's response!
+
+### 30-Second Setup:
+1. Open **Telegram** and search for **`@BotFather`**.
+2. Send `/newbot`, choose a name (e.g. `My Iglet Bot`) and a username ending in `bot` (e.g. `iglet_companion_bot`).
+3. BotFather will give you a **Bot Token** (e.g. `123456789:ABCdefGhIJKlmNoPQRsTUVwxyZ_1234567`).
+4. Enter this token in Iglet:
+   - **Method 1 (Wireless)**: Open `http://iglet.local` (or `http://192.168.4.1`) on your phone, paste the token in **Telegram Remote Bot**, and click Save!
+   - **Method 2 (`config.h`)**: Paste it in `config.h` under `#define TELEGRAM_BOT_TOKEN "..."`.
+5. Open your new bot in Telegram and tap **Start** (or send `/start`).
+   - Iglet will **automatically link to your Chat ID** and reply: *"🎉 Successfully paired with Iglet!"*
+
+### How to Send Notes:
+- Simply message your bot: `Thinking of you always <3`
+- To split cleanly onto two lines, use a pipe `|`:  
+  `Good morning | Have an amazing day <3`
+- Emojis (❤️, 💖, 😊, 🥰, etc.) are automatically converted to clean ASCII glyphs (`<3`, `:)`) so the 0.96" OLED renders crisp text without distortion!
+- As soon as the note appears on her desk, the bot sends you a confirmation: *"💖 Delivered to her desk!"*
 
 ---
 
