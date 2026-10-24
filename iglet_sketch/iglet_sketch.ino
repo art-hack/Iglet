@@ -511,6 +511,7 @@ void startWiFiOrAP() {
     wifiConnecting = true;
     wifiConnectStart = millis();
     apModeActive = false;
+    ntpConfigured = false;
     Serial.print(F("Connecting to WiFi: "));
     Serial.println(cfgWifiSSID);
   } else {
@@ -615,7 +616,12 @@ void handleSave() {
   if (server.hasArg("bd")) cfgBdayDay = server.arg("bd").toInt();
   if (server.hasArg("am")) cfgAnnivMonth = server.arg("am").toInt();
   if (server.hasArg("ad")) cfgAnnivDay = server.arg("ad").toInt();
-  if (server.hasArg("tz")) cfgTzOffset = server.arg("tz").toFloat();
+  if (server.hasArg("tz")) {
+    cfgTzOffset = server.arg("tz").toFloat();
+    if (WiFi.status() == WL_CONNECTED) {
+      configTime((long)(cfgTzOffset * 3600), 0, "pool.ntp.org", "time.nist.gov");
+    }
+  }
 
   if (server.hasArg("ssid") && server.arg("ssid").length() > 0) {
     strncpy(cfgWifiSSID, server.arg("ssid").c_str(), sizeof(cfgWifiSSID) - 1);
