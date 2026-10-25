@@ -1,162 +1,216 @@
-# Project IGOR & IGLET 🎀
+<div align="center">
 
-> 💖 **Looking for the Iglet Gift Firmware?**  
-> Check out the complete build and customization guide: **[IGLET_GUIDE.md](IGLET_GUIDE.md)**  
-> Firmware source code: **[`iglet_sketch/iglet_sketch.ino`](iglet_sketch/iglet_sketch.ino)** (for Wemos D1 Mini ESP8266)  
->
-> *Iglet adds Love Notes, Virtual Pet, Special Date Countdowns, Wireless Phone Setup Portal, Live Desk Notes Sender, Compliment Roulette, Decision Maker, Breathing Exercise, Mood Check-in, Auto-Wake Greetings, and Gentle Reminders to the original focus companion!*
+# 🎀 IGLET
+
+### An Adorable Connected Desk Companion, Focus Partner & Gift for Her
+
+[![Platform](https://img.shields.io/badge/Platform-ESP8266%20%7C%20Wemos%20D1%20Mini-4285F4?style=flat-square&logo=espressif&logoColor=white)](https://en.wikipedia.org/wiki/ESP8266)
+[![3D Print](https://img.shields.io/badge/3D%20Print-100%25%20Press--Fit%20(No%20Screws)-00C853?style=flat-square)](3D%20Parts/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-orange?style=flat-square)](LICENSE)
+[![Based on Project IGOR](https://img.shields.io/badge/Based%20on-Project%20IGOR%20by%20Urban%20Circles-coral?style=flat-square)](https://github.com/UrbanCircles/igor)
+
+<br/>
+
+<img src="images/iglet_front.jpg" alt="Iglet Desk Companion - Live NTP Clock and Sleeping Companion" width="760" style="border-radius: 12px; box-shadow: 0 8px 24px rgba(0,0,0,0.15);" />
+
+*Iglet resting on a desk: live NTP clock, calendar date, and the adorable sleepy pet idle screen `♥ (-.-)zzZ ♥`.*
+
+<br/>
+
+[📖 Complete Gifting & Build Guide (IGLET_GUIDE.md)](IGLET_GUIDE.md) •
+[⚡ Firmware Source (`iglet_sketch/`)](iglet_sketch/iglet_sketch.ino) •
+[🖨️ 3D Models (`3D Parts/`)](3D%20Parts/)
+
+</div>
 
 ---
 
-# Project IGOR - open-source, loyal, cheerful assistant
+## 🌟 What is Iglet?
 
-> [!TIP]  
-> This is the base configuration of IGOR, to serve one straight forward, important use case: it turns the IGOR platform into a simple and effective focus assistant (simple by design). It works very well as is.
-> 
-> However, if you wish, you can go beyond this and make this human-machine/ human-computer interface truly your own.
->
-> The hardware is capable, the minimalist design is tactile + satisfying to use, and the firmware is easy to develop/ scale in whichever direction your imagination leads you towards!
-> I'm excited to see what you come up with!
+**Iglet** is a charming, connected desk companion and tactile focus assistant designed as a personalized, thoughtful gift. 
 
-Base IGOR: A simple, tactile tool to help you track and hopefully increase the amount of minutes that matter each day.
+Housed in a compact, snap-fit 3D-printed case with a retro rotary dial and an OLED screen, Iglet combines heartfelt companionship with everyday utility. It keeps your favorite person company throughout the workday with an interactive virtual pet, live Wi-Fi and worldwide Telegram messaging, relationship countdowns, calm breathing exercises, sweet reminders, and full Pomodoro/productivity timers.
 
-This project is designed to help you stay on track with your focus sessions, using a simple and intuitive interface via a rotary encoder and an OLED display. Whether you need to time focused work, breaks or other worthy pursuits, this simple cheerful timer is a perfect tool to support your productivity.
+Whether sitting beside a laptop or on a bedside table, Iglet provides a warm, tactile presence without needing a smartphone screen or intrusive notifications.
 
-Bonus: it's cheap to put together and highly hackable. I wrote the code in a modular way and you can add your own functions to it easily. Just make sure you share that back so that we can all enjoy your ideas in action!!
+---
 
-## Its simple features (v1)
+## 🙏 Credits & Origins
 
-- **Up and Down Counting Modes:** Select either *count up* or *count down* mode. Both are in minutes based on millies (seconds seem way too distracting - you want to slow down and dive in).
-- **Rotary Encoder Control:** Use the encoder to navigate the menu and adjust timer values. Rotate to move up and down, click to confirm. Easy.
-- **OLED Display:** Provides real-time feedback on timer status and focus session duration, as well as your beautiful Flow total minutes acculturated since your last reset.
-- **IDLE Mode:** Automatically enters *IDLE mode* after 3 minutes of inactivity (and shows up a question to prompt you to come back into action), turns off the display after 30 minutes to conserve energy.
-- **Success Animation:** Displays a short animation at the end of each session (positive reinforcement gains!).
-- **Manual Timer Reset:** Reset your total focus time using a simple menu option so you can start afresh. Unplugging the device also achieves this - nothing is permanent, we have to keep performing!
-- **Cute hats that you can swap:** Design your own rotary encoder knobs, ney - hats, or download some that I made. Add some personality to your assistant, be it a British butler, a French concierge, or Italian enforcer, etc. have some fun with this. And make sure you give it a name.
+Iglet is built upon the wonderful foundation of **[Project IGOR](https://github.com/UrbanCircles/igor)** created by **[Urban Circles](https://makerworld.com/en/models/1000048-project-igor-open-source-offline-focus-partner)**.
 
-![_DSC0945 Large](https://github.com/user-attachments/assets/ef5a7adf-0809-4d12-9821-14966fce223a)
+- **Original Project**: [Project IGOR on GitHub](https://github.com/UrbanCircles/igor) by [Urban Circles](https://github.com/UrbanCircles)
+- **Original 3D Model & Enclosure**: [MakerWorld Model #1000048 (Project IGOR - Open Source Offline Focus Partner)](https://makerworld.com/en/models/1000048-project-igor-open-source-offline-focus-partner)
 
+### How Iglet Differs from the Original IGOR
 
-## BOM
+While the original IGOR is a minimalist, offline productivity timer, **Iglet** reimagines the platform into an expressive, Wi-Fi-connected companion and gift device:
 
-- Adafruit SSD1306 OLED Display (128x64)
-- KY-040 rotary encoder
-- D1 mini board (any Arduino board will do, but you will have to adjust the sketch)
-- 3D printer for the shell - all pressure fit, no screws, no glue, nothing else required
+| Aspect | Base Project IGOR | Project IGLET |
+| :--- | :--- | :--- |
+| **Primary Goal** | Minimalist offline focus timer | Heartfelt desk companion, gift device & focus partner |
+| **Connectivity** | Completely offline | Wi-Fi (ESP8266), Captive Portal, Local Web Server, mDNS |
+| **Remote Messaging** | None | **Two-way Telegram Bot** (send notes from anywhere in the world) + local web sender |
+| **Setup Experience** | Hardcoded in source code | **Zero-code phone portal** (`Iglet-Setup` hotspot at `192.168.4.1`) |
+| **Clock & Time** | Relative timer minutes only | **Live NTP real-world clock & calendar** synced via `pool.ntp.org` |
+| **Companion Features** | Idle taunt text (`IDLE?`) | **Virtual Pet** (feed, pet, play, 5-heart EEPROM affection level), 20 Love Notes, Countdown to Birthday/Anniversary, Compliment Roulette, Decision Maker |
+| **Wellness & Mindfulness**| None | **4-2-6 Calming Breathing**, Mood check-in with Telegram alerts, gentle reminders |
+| **Productivity Tools** | Count UP & Count DOWN | Count UP, Count DOWN, **Pomodoro (POMO)** cycles, EEPROM Flow minutes tracking |
+| **Hardware Wiring** | Required soldering a ground Y-splitter | **Software GND on pin D5** — zero splitters or wire splicing required! |
 
-Affiliate links to grab the components (if you want to use them):
+---
 
-| Component       | Amazon US Link                     | Amazon UK Link                     |
-|---------------|--------------------------------|--------------------------------|
-| Rotary Encoder | https://amzn.to/4h4bjCB | https://amzn.to/432Xb8A |
-| OLED Display  | https://amzn.to/4apCANs | https://amzn.to/4gYGKxk |
-| Microcontroller (USB-C D1 Mini) | https://amzn.to/4h2zQYO | https://amzn.to/4gRFgFe |
+## ✨ Features at a Glance
 
-(unit cost at the time of writing: just under $7. I'd recommend buying the components in sets - they're great for many projects, and the sets drives the unit cost down)
+### 💌 Love & Connection
+- **Two-Way Telegram Bot**: Text your bot from anywhere in the world while commuting or at work, and your message instantly pops up on her desk OLED! When she logs her mood on Iglet, you get an immediate notification on Telegram.
+- **Wireless Phone Setup (`Iglet-Setup`)**: Connect phone to the `Iglet-Setup` hotspot to set her name, birthday, anniversary, and Wi-Fi credentials via a friendly captive portal — no code or reflashing required!
+- **Live Desk Notes Sender (`http://iglet.local`)**: Anyone on the local Wi-Fi can open the dashboard in their browser to send surprise real-time notes to her screen.
+- **20 Personal Love Notes (`Notes`)**: Curated love notes browseable using the rotary knob or displayed during auto-wake greetings.
+- **Event Countdowns & Automated Celebrations (`Days`)**: Live countdowns to her Birthday and your Anniversary. When the special day arrives, Iglet automatically plays a surprise celebration animation with glowing candles and pulsing hearts.
 
-**Note:** in case you have a **Pico** around already, you can use that variant as the basis for your IGOR thanks to one of our contributors! Pico code in repo.
+### 🐾 Companion & Wellness
+- **Interactive Virtual Pet (`Pet`)**: An animated desktop buddy! Pet it (wiggles + floating hearts), feed it (nom nom treat animation), or play together (happy hops + sparkles). Saves a 5-heart affection level directly into EEPROM.
+- **Live NTP Desk Clock**: Automatic time and date sync with an adorable sleeping companion footer `♥ (-.-)zzZ ♥` when inactive.
+- **Calm Breathing Exercise (`Breathe`)**: Guided 4-2-6 relaxation breathing with smooth pulsing graphic animations and configurable cycles (1–20).
+- **Expressive Mood Check-in (`Mood`)**: Rotate through 5 cute pixel faces (Happy, Okay, Sad, Angry, Love) to receive a warm on-screen response and alert your partner via Telegram.
+- **Compliment Roulette (`Spin!`)**: Slot-machine style compliment spinner with mechanical deceleration and sparkle effects.
+- **Magic Decider (`Decide`)**: Animated 8-ball dilemma solver for date nights, food choices, or indecisive moments.
+- **Auto-Wake & Gentle Reminders**: Periodic subtle wellness pings (hydration, stretching, posture) and configurable auto-wake screen greetings (`1m`, `30m`, `1h`, `2h`, `4h`).
 
-## Pinout
+### ⏱️ Tactile Productivity
+- **Count UP Mode**: Open-ended stopwatch for deep work sessions.
+- **Count DOWN Mode**: Quick rotary-dial timer for timed tasks and sprints.
+- **Pomodoro Mode (`POMO`)**: Automated work and rest intervals.
+- **Flow Minutes Tracking**: Keeps tally of total daily focus minutes saved persistently in EEPROM.
 
-| Component            | Pin |
-|----------------------|-----|
-| OLED SDA             | D2  |
-| OLED SCL             | D1  |
-| Rotary Encoder CLK   | D6  |
-| Rotary Encoder DT    | D7  |
-| Rotary Encoder SW    | D4  |
+---
 
-## Wiring (for illustration - always check your actual components vs firmware)
+## 📷 Gallery & Hardware Design
 
-![image](https://github.com/user-attachments/assets/37c8985d-d737-4752-ad43-fd7bf724d4a1)
+<p align="center">
+  <img src="images/iglet_perspective.jpg" alt="Iglet Angled View" width="46%" style="border-radius: 8px;" />
+  &nbsp;&nbsp;
+  <img src="images/iglet_top.jpg" alt="Iglet Top View with Rotary Dial" width="46%" style="border-radius: 8px;" />
+</p>
 
-## Microcontroller firmware
+- **Tactile Rotary "Hat"**: A satisfying ribbed rotary dial with push-button click for effortless one-handed control.
+- **Snap-Fit Enclosure**: 3D-printed in three parts (shell, faceplate, knob) with no screws, glue, or fasteners needed.
+- **Dual-Color OLED**: Crisp 0.96" display with a warm yellow status header and cool blue interactive body.
 
-One sketch file, using the IDE of your choice (e.g. the main Arduino IDE works well with the added modules for D1 mini + libraries - that's what I use).  
-Please check everything is working before soldering and squeezing everything into the 3D printed shell.
+---
 
-## Assembly
+## 🛠️ Bill of Materials (BOM)
 
-There are only 3 components to this:
+| Component | Recommended Part | Approx. Cost | Notes |
+| :--- | :--- | :--- | :--- |
+| **Microcontroller** | Wemos D1 Mini (ESP8266) | ~$3.00 | USB-C version recommended |
+| **Display** | 0.96" SSD1306 I2C OLED (128x64) | ~$2.50 | Yellow/Blue dual color |
+| **Rotary Controller** | KY-040 Rotary Encoder | ~$1.50 | Includes built-in push button switch |
+| **Enclosure** | 3D Printed Case (Shell, Faceplate, Hat) | ~$1.00 | PLA or PETG; files in [`3D Parts/`](3D%20Parts/) |
+| **Power** | USB-C or Micro-USB Cable | — | Connects to phone charger or USB port |
 
-- The shell - the D1 mini fits snuggly in there, and the rotary encoder screws on the top.
-- The faceplate - the OLED slides in (make sure the display is nicely squared - the slide should allow some wiggle room, as the tolerances on these displays are quite bad but hey, it's really cheap).
-- The hat - this is the knob to rotate and press on. It fits on top of the rotary encoder, with the key as a guide.
+> **Total Cost**: ~$7–$10 USD.
 
-The orientation of parts on the printer's bed matters - only some hats will need internal supports because of the interface with the rotary encoder. All else prints easily with normal PLA (but you can get more exotic - people share your creations!).
+---
 
-Do play with the dimensions - tolerances (around 0.2-0.3mm) work very well for our printers and achieve a satisfying fit, but they require some adjustment/scaling for your setup.
+## 🔌 Pinout & Wiring
 
-The order of the assembly I found to work best is:
+Thanks to a software-driven ground pin on `D5`, **you do not need any wire splitters or splicing**!
 
-1. First, wire everything together, write the firmware to the board, fire it up, rotate, click, play - make sure everything works well. Do not use headers for the D1 mini, check the length of your wires and the orientation of components - it's a tight but precise fit.
-2. Second, the OLED panel should be attached to the faceplate.
-3. Third, the rotary encoder and the D1 mini (which only goes in one way) should be attached to the shell.
-4. Lastly, you can snap everything together.
+| Component Pin | D1 Mini Pin | GPIO | Function |
+| :--- | :--- | :--- | :--- |
+| **OLED SDA** | `D2` | GPIO4 | I2C Data line |
+| **OLED SCL** | `D1` | GPIO5 | I2C Clock line |
+| **OLED VCC** | `5V` (or `3V3`) | — | Power |
+| **OLED GND** | `G` | — | Ground |
+| **Encoder CLK** | `D6` | GPIO12 | Rotary Clock |
+| **Encoder DT** | `D7` | GPIO13 | Rotary Direction |
+| **Encoder SW** | `D4` | GPIO2 | Push Button Switch |
+| **Encoder + (VCC)**| `3V3` | — | 3.3V Power |
+| **Encoder GND** | `D5` | GPIO14 | **Software GND** (driven LOW — no Y-splitter needed!) |
 
-Note on hats: I encourage you to make this your own by designing and printing (and hopefully sharing) a custom hat. The dimensions to fit the encoder are openly available online and it's really simple to put something together. I have made available several iteration that I found funny or relevant as I was dressing up my assistant - you only need one.
+---
 
-## User Guide
+## 🚀 Quick Start Guide
 
-### How to Use
+### 1. 3D Printing
+Print the models located in [`3D Parts/`](3D%20Parts/):
+1. **Shell**: Holds the D1 Mini board and secures the rotary encoder from above.
+2. **Faceplate**: Holds the 0.96" OLED screen and snaps onto the front of the shell.
+3. **Hat (Knob)**: Presses firmly onto the rotary encoder shaft.
 
-#### 1. Initial Setup
+*All parts are designed to be 100% press-fit with standard 0.2mm layer height on PLA or PETG.*
 
-When powered on, the device will start in the main menu. The top of the screen displays your total focus time, while the main menu shows the current option to select (UP, DOWN, or Reset). The rotary encoder allows you to scroll through the options and make selections with a button press.  
-Basically, there is no initial setup... we're ready when you are!
+### 2. Flashing the Firmware
+1. Open **Arduino IDE**.
+2. Install **ESP8266 Board Support**:
+   - `File` → `Preferences` → Add to *Additional Boards Manager URLs*:  
+     `http://arduino.esp8266.com/stable/package_esp8266com_index.json`
+   - `Tools` → `Board` → `Boards Manager...` → Search `esp8266` and click **Install**.
+3. Install required libraries from `Tools` → `Manage Libraries...`:
+   - **Adafruit SSD1306**
+   - **Adafruit GFX Library**
+4. Open [`iglet_sketch/iglet_sketch.ino`](iglet_sketch/iglet_sketch.ino).
+5. Select Board: `Tools` → `Board` → `ESP8266 Boards` → **LOLIN(WEMOS) D1 R2 & mini**.
+6. Select your COM port and click **Upload**.
 
-#### 2. Main Menu
+### 3. Wireless Configuration (Zero-Code Setup)
+1. Turn on Iglet. On your phone or laptop, connect to the Wi-Fi network:
+   - **SSID**: `Iglet-Setup`
+   - **Password**: *(None / Open)*
+2. A setup portal will open automatically (or visit `http://192.168.4.1`).
+3. Fill in her name, birthday, anniversary, timezone, and your home Wi-Fi details.
+4. Tap **Save & Connect ✨**. All preferences are stored in EEPROM memory.
 
-The main menu offers three options:
+### 4. Telegram Bot Integration (Optional)
+1. Open Telegram, search for `@BotFather`, and create a new bot with `/newbot`.
+2. Copy the **HTTP API Bot Token**.
+3. Open `http://iglet.local` on your local network, paste the token in the Telegram field, and hit Save.
+4. Open your bot in Telegram and send `/start`. Iglet will pair immediately!
 
-- **UP:** Start counting focus time upward. Great for open-ended focus sessions.
-- **DOWN:** Select a countdown duration and track your focus session as it counts down to zero.
-- **Reset:** Manually reset your total focus time to zero. This won't affect current sessions but will clear the accumulated flow minutes shown on the top of the screen.
+> For full gifting ideas, advanced customization, and step-by-step screenshots, see **[IGLET_GUIDE.md](IGLET_GUIDE.md)**.
 
-#### 3. Count UP Mode
+---
 
-- Rotate to the **UP** option and click the button to start.
-- The display shows "Focus!" with an upward-pointing triangle, and the elapsed minutes appear in large text.
-- Click the button again to stop and return to the menu. The session's duration is added to your total focus time.
+## 🎮 Navigation & Controls
 
-#### 4. Count DOWN Mode
+| Action | Control | Result |
+| :--- | :--- | :--- |
+| **Scroll Menu** | Rotate Dial | Cycles through all features (`Pet`, `Days`, `Spin!`, `Decide`, `Breathe`, `Mood`, `WiFi`, `Wake`, `UP`, `DOWN`, `POMO`, `Reset`) |
+| **Confirm / Select**| Click Dial | Opens current item or triggers action |
+| **Virtual Pet** | Rotate + Click | Choose `Pet`, `Feed`, or `Play` to raise happiness and love level |
+| **Days / Clock** | Rotate in `Days` | Toggle between Anniversary countdown, Birthday countdown, and live NTP clock |
+| **Calm Breathing** | Rotate + Click | Set cycle count (1–20) and begin guided 4-2-6 breathing |
+| **Mood Check-in** | Rotate + Click | Select from 5 expressive faces; updates screen and alerts Telegram |
+| **Reset Wi-Fi** | Rotate in `WiFi` | Navigate to Page 2 to re-launch the `Iglet-Setup` hotspot |
+| **Wake from Sleep** | Turn or Click Dial | Instantly wakes the display back to the main menu |
 
-- Rotate to the **DOWN** option and click the button.
-- Use the encoder to adjust the countdown duration, then click again to start the countdown.
-- The display shows "Focus!" with a downward-pointing triangle, and the remaining minutes appear in large text.
-- When the countdown reaches zero, a success animation is displayed, and the time is added to your total focus time.
+---
 
-#### 5. Reset Focus Time
+## 📁 Repository Structure
 
-From the menu, rotate to the **Reset** option and click the button to reset your total focus time to zero.
+```
+Iglet/
+├── 3D Parts/             # 3MF and STEP 3D models (Shell, Faceplate, Hats)
+├── images/               # High-resolution photos of the assembled device
+│   ├── iglet_front.jpg
+│   ├── iglet_perspective.jpg
+│   └── iglet_top.jpg
+├── iglet_sketch/         # ESP8266 Arduino sketch & firmware
+│   ├── iglet_sketch.ino  # Main firmware logic
+│   ├── config.example.h  # Template for optional pre-flashed private secrets
+│   └── config.h          # (Ignored by git) Private personal configuration
+├── IGLET_GUIDE.md        # Comprehensive gift presentation and customization guide
+├── LICENSE               # MIT License
+└── README.md             # Project documentation
+```
 
-#### 6. IDLE Mode
+---
 
-If the timer remains in the menu or selection screen without user interaction for more than 3 minutes, the display will show "IDLE?" - this is purely to taunt you back into action!  
-After 30 minutes of inactivity, the display turns off entirely - this is to conserve energy.  
-Simply press the button to exit IDLE mode and return to the menu.
+## 📜 License & Acknowledgements
 
-### Example Workflow
+- **Software & Firmware**: Released under the [MIT License](LICENSE).
+- **Physical Design & Concept**: Enclosure 3D CAD models and original focus partner concept credited to **[Urban Circles](https://makerworld.com/en/models/1000048-project-igor-open-source-offline-focus-partner)** ([Project IGOR](https://github.com/UrbanCircles/igor)).
 
-- Select **UP** to start timing a work session.
-- After completing the session, stop the timer, and your total focus time is updated.
-- Next, select **DOWN** to time a 20-minute break by adjusting the countdown timer.
-- At the end of the day, if you want to reset your total focus time, navigate to **Reset** and click the button to start fresh.
-
-## Video showcasing the whole thing
-https://youtu.be/Wko0zgRGtPI
-
-## Roadmap ideas
-
-Here are a bunch of features I think might be cool to try out. Please add your ideas as well. Also, please help me by submitting code!! I'm a designer, not a programmer and could really use some of your talents to bring this project alive.
-
-- [ ] Add sound notifications
-- [ ] Get internet time via Wifi + portal, since this is a ESP module
-- [ ] More animations and transitions
-- [ ] More modes available (any ideas?)
-- [ ] API to interact with external applications (e.g. Time trackers, ToDo apps, Shortcuts/ automations)
-
-## Disclaimer
-
-I've done my best to document everything accurately - however, there might be mistakes. If you see them, or opportunities to improve, please open an issue.  
-This is an open-source project given for free, with no warranties or guarantees. It assumes a level of proficiency with electronics, assemblies, engineering, etc. Stay safe. Stay productive. Work with what you have. Make the world a better place.
+Made with ❤️ for someone special.
